@@ -1,0 +1,163 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import Fastify from 'fastify';
+import fastifyCookie from '@fastify/cookie';
+import fastifyCors from '@fastify/cors';
+import fastifyHelmet from '@fastify/helmet';
+import fastifyRateLimit from '@fastify/rate-limit';
+import fastifyStatic from '@fastify/static';
+import fastifyWebsocket from '@fastify/websocket';
+import { config } from './config';
+import { globalErrorHandler } from './errors';
+import { logger } from './logger';
+import { disconnectDatabase } from './database';
+import { controlPlaneScheduler } from './scheduler';
+import { registerHealthRoutes } from './routes/health';
+import { registerAuthRoutes } from './routes/auth';
+import { registerUserRoutes } from './routes/users';
+import { registerHostRoutes } from './routes/hosts';
+import { registerAdminRoutes } from './routes/admin';
+
+async function bootstrapControlPlane() {
+  const app = Fastify({
+    logger: false,
+    trustProxy: true,
+  });
+
+  app.setErrorHandler(globalErrorHandler);
+
+  // Security headers
+  await app.register(fastifyHelmet, {
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    frameguard: false,
+  });
+
+  // CORS configuration
+  await app.register(fastifyCors, {
+    origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map((o) => o.trim()),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
+
+  // Secure Cookies
+  await app.register(fastifyCookie, {
+    secret: config.sessionSecret,
+  });
+
+  // Rate Limiting on API endpoints
+  await app.register(fastifyRateLimit, {
+    max: 180,
+    timeWindow: '1 minute',
+    allowList: (req) => !req.url.startsWith('/api/'),
+  });
+
+  // WebSocket support for Console & Node Agents
+  await app.register(fastifyWebsocket, {
+    options: {
+      maxPayload: 1024 * 64,
+    },
+  });
+
+  // Serve Official Logo from /assets/Logo.png
+  const assetsDir = path.resolve(process.cwd(), 'assets');
+  if (fs.existsSync(assetsDir)) {
+    await app.register(fastifyStatic, {
+      root: assetsDir,
+      prefix: '/assets/',
+      decorateReply: false,
+    });
+  }
+
+  // Register Control Plane API Routes
+  await registerHealthRoutes(app);
+  await registerAuthRoutes(app);
+  await registerUserRoutes(app);
+  await registerHostRoutes(app);
+  await registerAdminRoutes(app);
+
+  const distDir = path.resolve(process.cwd(), 'dist');
+  const isProd = config.nodeEnv === 'production' && fs.existsSync(path.join(distDir, 'index.html'));
+
+  if (isProd) {
+    await app.register(fastifyStatic, {
+      root: distDir,
+      prefix: '/',
+      decorateReply: false,
+      wildcard: false,
+    });
+
+    const indexHtml = fs.readFileSync(path.join(distDir, 'index.html'), 'utf-8');
+
+    app.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith('/api/')) {
+        reply.status(404).send({
+          success: false,
+          error: {
+            code: 'ENDPOINT_NOT_FOUND',
+            message: `API endpoint ${request.method} ${request.url} does not exist.`,
+          },
+        });
+        return;
+      }
+      reply.type('text/html').send(indexHtml);
+    });
+  } else {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+
+    app.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith('/api/')) {
+        reply.status(404).send({
+          success: false,
+          error: {
+            code: 'ENDPOINT_NOT_FOUND',
+            message: `API endpoint ${request.method} ${request.url} does not exist.`,
+          },
+        });
+        return;
+      }
+      reply.hijack();
+      vite.middlewares(request.raw, reply.raw, () => {
+        reply.raw.statusCode = 404;
+        reply.raw.end('Not Found');
+      });
+    });
+  }
+
+  // Start Control Plane Scheduler
+  controlPlaneScheduler.start(60_000);
+
+  // Graceful Shutdown
+  const shutdown = async (signal: string) => {
+    logger.info(`Received ${signal}. Shutting down HyperHost Control Plane gracefully...`);
+    controlPlaneScheduler.stop();
+    await app.close();
+    await disconnectDatabase();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+  await app.listen({
+    port: config.port,
+    host: config.host,
+  });
+
+  logger.info('HyperHost Control Plane started', {
+    host: config.host,
+    port: config.port,
+    environment: config.nodeEnv,
+  });
+}
+
+bootstrapControlPlane().catch((err) => {
+  logger.error('Fatal error during Control Plane startup', {
+    message: err instanceof Error ? err.message : String(err),
+  });
+  process.exit(1);
+});

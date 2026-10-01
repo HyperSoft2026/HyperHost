@@ -1,0 +1,8 @@
+{
+  "name": "HyperHost",
+  "description": "Professional Discord & Telegram Bot Hosting Platform with instance management, runtime console logs, environment configuration, and multi-region container deployment.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

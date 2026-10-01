@@ -1,0 +1,355 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum HostType {
+  DISCORD_BOT
+  TELEGRAM_BOT
+  NODEJS_APP
+  PYTHON_APP
+  JAVA_APP
+  GO_APP
+  RUST_APP
+  CUSTOM
+}
+
+enum HostRuntime {
+  NODEJS
+  PYTHON
+  JAVA
+  GO
+  RUST
+  PHP
+  RUBY
+  DOTNET
+  CPP
+}
+
+enum HostStatus {
+  PENDING
+  INSTALLING
+  OFFLINE
+  STARTING
+  ONLINE
+  STOPPING
+  SUSPENDED
+  ERROR
+}
+
+enum NodeStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+}
+
+enum AllocationProtocol {
+  TCP
+  UDP
+  BOTH
+}
+
+enum AllocationStatus {
+  AVAILABLE
+  ASSIGNED
+  RESERVED
+}
+
+enum DatabaseEngine {
+  POSTGRESQL
+  MYSQL
+  MONGODB
+  REDIS
+}
+
+enum DatabaseStatus {
+  PENDING
+  READY
+  ERROR
+  DELETING
+}
+
+enum BackupStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  RESTORING
+}
+
+enum ScheduleTaskType {
+  POWER_START
+  POWER_STOP
+  POWER_RESTART
+  EXECUTE_COMMAND
+  CREATE_BACKUP
+}
+
+model User {
+  id              String           @id @default(cuid())
+  discordId       String           @unique
+  username        String
+  displayName     String
+  avatar          String?
+  email           String?
+  role            UserRole         @default(USER)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  discordAccount  DiscordAccount?
+  sessions        Session[]
+  ownedHosts      Host[]           @relation("HostOwner")
+  hostPermissions HostPermission[]
+  activityLogs    ActivityLog[]
+
+  @@index([discordId])
+  @@index([role])
+}
+
+model DiscordAccount {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  discordId             String    @unique
+  username              String
+  globalName            String?
+  avatar                String?
+  email                 String?
+  accessTokenEncrypted  String?
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  scopes                String[]
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([discordId])
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  csrfToken String
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Node {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  location        String
+  fqdn            String
+  ipAddress       String
+  daemonPort      Int              @default(8080)
+  status          NodeStatus       @default(OFFLINE)
+  isOnline        Boolean          @default(false)
+  agentTokenHash  String           @unique
+  maxMemoryMb     Int
+  maxDiskMb       Int
+  maxCpuPercent   Int              @default(1000)
+  lastHeartbeatAt DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  hosts           Host[]
+  allocations     NodeAllocation[]
+  databases       Database[]
+
+  @@index([status, isOnline])
+}
+
+model NodeAllocation {
+  id        String             @id @default(cuid())
+  nodeId    String
+  hostId    String?
+  ipAddress String
+  port      Int
+  protocol  AllocationProtocol @default(TCP)
+  isPrimary Boolean            @default(false)
+  status    AllocationStatus   @default(AVAILABLE)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  node      Node               @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  host      Host?              @relation(fields: [hostId], references: [id], onDelete: SetNull)
+
+  @@unique([nodeId, ipAddress, port, protocol])
+  @@index([hostId])
+  @@index([nodeId, status])
+}
+
+model Host {
+  id               String            @id @default(cuid())
+  ownerId          String
+  nodeId           String?
+  name             String
+  description      String?
+  type             HostType          @default(DISCORD_BOT)
+  runtime          HostRuntime       @default(NODEJS)
+  runtimeVersion   String            @default("22")
+  status           HostStatus        @default(PENDING)
+  memoryLimitMb    Int               @default(512)
+  cpuLimitPercent  Int               @default(100)
+  diskLimitMb      Int               @default(2048)
+  startupCommand   String            @default("node index.js")
+  startupArgs      String[]          @default([])
+  workingDirectory String            @default("/home/container")
+  dockerImage      String            @default("ghcr.io/hypersoft2026/runtime-nodejs:22")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  owner            User              @relation("HostOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  node             Node?             @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  environments     HostEnvironment[]
+  permissions      HostPermission[]
+  allocations      NodeAllocation[]
+  databases        Database[]
+  schedules        Schedule[]
+  backups          Backup[]
+  activityLogs     ActivityLog[]
+
+  @@index([ownerId])
+  @@index([nodeId])
+  @@index([status])
+}
+
+model HostEnvironment {
+  id             String   @id @default(cuid())
+  hostId         String
+  key            String
+  encryptedValue String
+  isSecret       Boolean  @default(true)
+  description    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  host           Host     @relation(fields: [hostId], references: [id], onDelete: Cascade)
+
+  @@unique([hostId, key])
+  @@index([hostId])
+}
+
+model HostPermission {
+  id          String   @id @default(cuid())
+  hostId      String
+  userId      String
+  permissions String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  host        Host     @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([hostId, userId])
+  @@index([userId])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  hostId    String?
+  action    String
+  metadata  Json     @default("{}")
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  host      Host?    @relation(fields: [hostId], references: [id], onDelete: Cascade)
+
+  @@index([hostId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action])
+}
+
+model Schedule {
+  id             String           @id @default(cuid())
+  hostId         String
+  name           String
+  cronExpression String
+  taskType       ScheduleTaskType
+  payload        String?
+  isActive       Boolean          @default(true)
+  onlyWhenOnline Boolean          @default(false)
+  lastRunAt      DateTime?
+  nextRunAt      DateTime?
+  lastStatus     String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  host           Host             @relation(fields: [hostId], references: [id], onDelete: Cascade)
+
+  @@index([hostId, isActive])
+}
+
+model Backup {
+  id              String       @id @default(cuid())
+  hostId          String
+  name            String
+  status          BackupStatus @default(PENDING)
+  sizeBytes       BigInt       @default(0)
+  storageProvider String       @default("s3")
+  storageKey      String?
+  checksumSha256  String?
+  isLocked        Boolean      @default(false)
+  completedAt     DateTime?
+  createdAt       DateTime     @default(now())
+
+  host            Host         @relation(fields: [hostId], references: [id], onDelete: Cascade)
+
+  @@index([hostId, createdAt])
+}
+
+model Database {
+  id             String         @id @default(cuid())
+  hostId         String
+  nodeId         String?
+  engine         DatabaseEngine @default(POSTGRESQL)
+  name           String
+  hostAddress    String
+  port           Int
+  maxConnections Int            @default(25)
+  status         DatabaseStatus @default(PENDING)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  host           Host           @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  node           Node?          @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  users          DatabaseUser[]
+
+  @@unique([hostId, name])
+  @@index([hostId])
+}
+
+model DatabaseUser {
+  id                String   @id @default(cuid())
+  databaseId        String
+  username          String
+  passwordEncrypted String
+  remoteHost        String   @default("%")
+  privileges        String[] @default(["ALL"])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  database          Database @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+
+  @@unique([databaseId, username])
+}
