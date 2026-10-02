@@ -93,6 +93,15 @@ async function bootstrapControlPlane() {
 
   const distDir = path.resolve(process.cwd(), 'dist');
   const distIndexPath = path.join(distDir, 'index.html');
+
+  if (config.nodeEnv === 'production' && !fs.existsSync(distIndexPath)) {
+    logger.info(
+      'Production frontend bundle not found at dist/index.html; building frontend assets with Vite...'
+    );
+    const { build: viteBuild } = await import('vite');
+    await viteBuild();
+  }
+
   const isProd =
     config.nodeEnv === 'production' && fs.existsSync(distIndexPath);
 
