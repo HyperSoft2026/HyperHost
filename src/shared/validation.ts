@@ -36,9 +36,12 @@ export const CreateHostSchema = z.object({
   ]),
   runtimeVersion: z.string().trim().min(1).max(16).default('22'),
   nodeId: z.string().trim().optional().nullable(),
-  memoryLimitMb: z.number().int().min(128).max(32768).default(512),
-  cpuLimitPercent: z.number().int().min(25).max(800).default(100),
-  diskLimitMb: z.number().int().min(512).max(102400).default(2048),
+  planCode: z.string().trim().optional().default('FREE'),
+  planId: z.string().trim().optional().nullable(),
+  memoryLimitMb: z.number().int().optional(),
+  cpuLimitPercent: z.number().int().optional(),
+  diskLimitMb: z.number().int().optional(),
+  storageLimitMb: z.number().int().optional(),
 });
 
 export const UpdateStartupSchema = z.object({

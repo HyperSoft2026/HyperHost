@@ -784,7 +784,7 @@ export function startStandaloneNodeAgent(): void {
                   proc: child,
                   startedAt: Date.now(),
                   memoryLimitMb: Number(spec.resources?.memoryLimitMb || 512),
-                  diskLimitMb: Number(spec.resources?.diskLimitMb || 2048),
+                  diskLimitMb: Number(spec.resources?.diskLimitMb || 800),
                   cpuLimitPercent: Number(spec.resources?.cpuLimitPercent || 100),
                 });
 
@@ -977,7 +977,7 @@ export function startStandaloneNodeAgent(): void {
             ]);
 
             const memLimitMb = managed?.memoryLimitMb || 512;
-            const diskLimitMb = managed?.diskLimitMb || 2048;
+            const diskLimitMb = managed?.diskLimitMb || 800;
 
             replyRpc(true, {
               hostId,

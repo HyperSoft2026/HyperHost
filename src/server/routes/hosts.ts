@@ -210,6 +210,16 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  // GET /api/plans — List available Hosting Plans
+  app.get('/api/plans', async () => {
+    const { getAvailableHostingPlans } = await import('../plans');
+    const plans = await getAvailableHostingPlans();
+    return {
+      success: true,
+      data: plans,
+    };
+  });
+
   // POST /api/hosts — Create a new Host (enforces 10 Host limit per user)
   app.post('/api/hosts', async (request, reply) => {
     const { user } = await requireAuth(request);
@@ -240,6 +250,11 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
 
     const generatedServerId = generatePublicId('srv');
 
+    // Strict Backend Resource Enforcement:
+    // Resolve Hosting Plan (defaulting to FREE). Client input for CPU/RAM/Disk is completely ignored.
+    const { resolveHostingPlanForHost } = await import('../plans');
+    const planSnapshot = await resolveHostingPlanForHost(body.planCode || body.planId || 'FREE');
+
     const createdHost = await prisma.host.create({
       data: {
         publicId: generatedServerId,
@@ -254,9 +269,11 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
         runtime: body.runtime,
         runtimeVersion: body.runtimeVersion || runtimeItem.defaultVersion,
         status: 'PENDING',
-        memoryLimitMb: body.memoryLimitMb,
-        cpuLimitPercent: body.cpuLimitPercent,
-        diskLimitMb: body.diskLimitMb,
+        planId: planSnapshot.planId,
+        memoryLimitMb: planSnapshot.memoryLimitMb,
+        cpuLimitPercent: planSnapshot.cpuLimit,
+        diskLimitMb: planSnapshot.storageLimitMb,
+        storageLimitMb: planSnapshot.storageLimitMb,
         startupCommand: runtimeItem.defaultStartupCommand,
         startupArgs: [],
         workingDirectory: '/home/container',

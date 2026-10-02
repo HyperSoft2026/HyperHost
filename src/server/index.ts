@@ -205,6 +205,8 @@ async function bootstrapControlPlane() {
 
   // Verify PostgreSQL connection & migration state
   await initializeDatabase();
+  const { seedHostingPlansIfAvailable } = await import('./plans');
+  await seedHostingPlansIfAvailable().catch(() => null);
 
   // Start Control Plane Scheduler
   controlPlaneScheduler.start(60_000);

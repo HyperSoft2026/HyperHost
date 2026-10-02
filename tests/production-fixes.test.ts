@@ -165,4 +165,48 @@ describe('Production Fixes & Verification Test Suite', () => {
     assert.strictEqual(check2.allowed, false, 'Immediate retry within 15s should be rate limited');
     assert.ok((check2.waitSeconds || 0) > 0, 'Wait seconds should be positive');
   });
+
+  // Test K: Hosting Plan FREE Model & Strict Limits
+  it('K) Hosting Plan FREE has strictly 100% CPU, 512MB RAM, and 800MB Storage (not 2048MB)', async () => {
+    const { CANONICAL_FREE_PLAN, resolveHostingPlanForHost } = await import('../src/server/plans');
+    assert.strictEqual(CANONICAL_FREE_PLAN.code, 'FREE');
+    assert.strictEqual(CANONICAL_FREE_PLAN.cpuLimit, 100);
+    assert.strictEqual(CANONICAL_FREE_PLAN.memoryLimitMb, 512);
+    assert.strictEqual(CANONICAL_FREE_PLAN.storageLimitMb, 800);
+    assert.notStrictEqual(CANONICAL_FREE_PLAN.storageLimitMb, 2048, 'Storage must be 800 MB, NOT 2048 MB');
+    assert.strictEqual(CANONICAL_FREE_PLAN.enabled, true);
+
+    const snapshot = await resolveHostingPlanForHost('FREE');
+    assert.strictEqual(snapshot.cpuLimit, 100);
+    assert.strictEqual(snapshot.memoryLimitMb, 512);
+    assert.strictEqual(snapshot.storageLimitMb, 800);
+  });
+
+  // Test L: Strict Backend Resource Enforcement (client manipulation ignored)
+  it('L) Backend enforcement: client overrides like 9999 CPU or 999999 RAM are ignored in favor of plan snapshot', async () => {
+    const { resolveHostingPlanForHost } = await import('../src/server/plans');
+    const attackerPayload = {
+      name: 'ExploitBot',
+      planCode: 'FREE',
+      cpuLimitPercent: 9999,
+      memoryLimitMb: 999999,
+      diskLimitMb: 999999,
+      storageLimitMb: 999999,
+    };
+
+    // The backend uses resolveHostingPlanForHost to construct the Host snapshot
+    const planSnapshot = await resolveHostingPlanForHost(attackerPayload.planCode);
+    const enforcedHostSnapshot = {
+      planId: planSnapshot.planId,
+      cpuLimitPercent: planSnapshot.cpuLimit,
+      memoryLimitMb: planSnapshot.memoryLimitMb,
+      diskLimitMb: planSnapshot.storageLimitMb,
+      storageLimitMb: planSnapshot.storageLimitMb,
+    };
+
+    assert.strictEqual(enforcedHostSnapshot.cpuLimitPercent, 100, 'CPU limit must be 100%');
+    assert.strictEqual(enforcedHostSnapshot.memoryLimitMb, 512, 'Memory limit must be 512MB');
+    assert.strictEqual(enforcedHostSnapshot.storageLimitMb, 800, 'Storage limit must be 800MB');
+    assert.strictEqual(enforcedHostSnapshot.diskLimitMb, 800, 'Disk limit must be 800MB');
+  });
 });

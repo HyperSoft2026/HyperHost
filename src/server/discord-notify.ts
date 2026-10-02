@@ -295,7 +295,7 @@ export function buildDiscordHostCreatedDmMessage(params: {
   const discordServerUrl = config.discord.supportServerUrl;
   const runtimeDisplay = formatRuntimeLabel(params.runtime, params.runtimeVersion);
   const ramMb = params.memoryLimitMb ?? 512;
-  const diskMb = params.diskLimitMb ?? 2048;
+  const diskMb = params.diskLimitMb ?? 800;
   const cpuPct = params.cpuLimitPercent ?? 100;
   const copy = DISCORD_NOTIFICATION_TEXT[params.locale];
 

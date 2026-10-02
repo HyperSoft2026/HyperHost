@@ -233,9 +233,11 @@ model Host {
   runtime             HostRuntime       @default(NODEJS)
   runtimeVersion      String            @default("22")
   status              HostStatus        @default(PENDING)
+  planId              String?
   memoryLimitMb       Int               @default(512)
   cpuLimitPercent     Int               @default(100)
-  diskLimitMb         Int               @default(2048)
+  diskLimitMb         Int               @default(800)
+  storageLimitMb      Int               @default(800)
   startupCommand      String            @default("node index.js")
   startupArgs         String[]          @default([])
   workingDirectory    String            @default("/home/container")
@@ -245,6 +247,7 @@ model Host {
 
   owner               User              @relation("HostOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   node                Node?             @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  plan                HostingPlan?      @relation(fields: [planId], references: [id], onDelete: SetNull)
   environments        HostEnvironment[]
   permissions         HostPermission[]
   allocations         NodeAllocation[]
@@ -256,8 +259,28 @@ model Host {
   @@index([publicId])
   @@index([ownerId])
   @@index([nodeId])
+  @@index([planId])
   @@index([status])
   @@index([provisioningStatus])
+}
+
+model HostingPlan {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String
+  description    String?
+  cpuLimit       Int      @default(100)
+  memoryLimitMb  Int      @default(512)
+  storageLimitMb Int      @default(800)
+  maxHosts       Int      @default(10)
+  enabled        Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  hosts          Host[]
+
+  @@index([code, enabled])
 }
 
 model HostEnvironment {

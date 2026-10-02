@@ -601,7 +601,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
             <span>{t.runtimeLabel}: {hostData?.runtime ?? 'NODEJS'} v{hostData?.runtimeVersion ?? '22'}</span>
             <span className="mx-2" aria-hidden="true">·</span>
             <span className="font-mono tabular-nums" dir="ltr">
-              {t.limitsLabel}: {hostData?.cpuLimitPercent ?? 100}% CPU / {hostData?.memoryLimitMb ?? 512} MB RAM / {hostData?.diskLimitMb ?? 2048} MB Disk
+              {t.limitsLabel}: {hostData?.cpuLimitPercent ?? 100}% CPU / {hostData?.memoryLimitMb ?? 512} MB RAM / {hostData?.storageLimitMb ?? hostData?.diskLimitMb ?? 800} MB Storage (FREE)
             </span>
           </div>
         </div>
