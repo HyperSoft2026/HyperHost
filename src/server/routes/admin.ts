@@ -265,7 +265,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           orderBy: q.sort === 'name' ? { name: 'asc' } : { createdAt: createdAtOrder },
           include: {
             owner: { select: { id: true, publicId: true, username: true, displayName: true, discordId: true } },
-            node: { select: { id: true, name: true, location: true } },
+            node: { select: { id: true, name: true, location: true, status: true, isOnline: true } },
           },
         }),
         prisma.host.count({ where }),
@@ -277,6 +277,9 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           entity: q.entity,
           items: rows.map((h) => {
             const nodeConnected = runtimeRegistry.isNodeConnected(h.nodeId);
+            const nodeStatus = h.node
+              ? runtimeRegistry.getNodeEffectiveStatus(h.node.id, h.node.status)
+              : 'OFFLINE';
             return {
               id: h.id,
               publicId: formatEntityPublicId('srv', h.id, h.publicId),
@@ -294,10 +297,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
                 ? 'OFFLINE'
                 : h.status,
               nodeOnline: nodeConnected,
+              nodeStatus,
               nodeName: h.node ? `${h.node.name} (${h.node.location})` : null,
-              provider: h.provider,
+              cleverCloudApplicationId: h.provisionedServerId,
               provisionedServerId: h.provisionedServerId,
+              provider: h.provider || 'clever-cloud',
               provisioningStatus: h.provisioningStatus,
+              deploymentStatus: h.serverStatus,
               serverStatus: h.serverStatus,
               provisioningError: h.provisioningError,
               memoryLimitMb: h.memoryLimitMb,

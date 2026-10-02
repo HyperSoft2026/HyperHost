@@ -177,6 +177,7 @@ export interface ProvisionedServer {
   fqdn: string;
   location: string;
   status: 'CREATING' | 'BOOTING' | 'READY' | 'ERROR';
+  deployUrl?: string;
 }
 
 export interface BootstrapRuntimeNodeInput {

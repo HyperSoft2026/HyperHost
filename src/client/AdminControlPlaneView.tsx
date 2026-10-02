@@ -523,12 +523,12 @@ export const AdminControlPlaneView: React.FC<{
                   {activeEntity === 'hosts' && (
                     <>
                       <th className="py-3 px-4 font-semibold">{t.hostNameLabel}</th>
-                      <th className="py-3 px-4 font-semibold">
-                        {isRtl ? 'المالك' : 'Owner'}
-                      </th>
-                      <th className="py-3 px-4 font-semibold">{t.runtimeLabel}</th>
-                      <th className="py-3 px-4 font-semibold">{t.statusLabel}</th>
-                      <th className="py-3 px-4 font-semibold">{t.limitsLabel}</th>
+                      <th className="py-3 px-4 font-semibold">Clever Cloud App ID</th>
+                      <th className="py-3 px-4 font-semibold">Provider</th>
+                      <th className="py-3 px-4 font-semibold">Provisioning Status</th>
+                      <th className="py-3 px-4 font-semibold">Deployment Status</th>
+                      <th className="py-3 px-4 font-semibold">Node Status</th>
+                      <th className="py-3 px-4 font-semibold">Host Status</th>
                     </>
                   )}
                   {activeEntity === 'activity' && (
@@ -675,35 +675,62 @@ export const AdminControlPlaneView: React.FC<{
                           <td className="py-3 px-4">
                             <div className="font-semibold text-white">{row.name}</div>
                             <div className="text-[11px] text-slate-400" dir="ltr">
-                              {row.type}
+                              {row.runtime} v{row.runtimeVersion} · @{row.owner?.username}
                             </div>
                           </td>
-                          <td className="py-3 px-4">
-                            <div className="text-slate-200">
-                              {row.owner?.displayName || row.owner?.username}
-                            </div>
-                            <div className="text-[11px] font-mono text-slate-500" dir="ltr">
-                              {row.owner?.publicId}
-                            </div>
+                          <td className="py-3 px-4 font-mono text-violet-300" dir="ltr">
+                            {row.cleverCloudApplicationId || row.provisionedServerId || '—'}
                           </td>
                           <td className="py-3 px-4 font-mono text-slate-300" dir="ltr">
-                            {row.runtime} v{row.runtimeVersion}
+                            {row.provider || 'clever-cloud'}
                           </td>
-                          <td className="py-3 px-4 font-mono">
+                          <td className="py-3 px-4 font-mono" dir="ltr">
+                            <span
+                              className={
+                                row.provisioningStatus === 'READY' ||
+                                row.provisioningStatus === 'NODE_ONLINE'
+                                  ? 'text-emerald-400'
+                                  : row.provisioningStatus === 'PROVISIONING_FAILED' ||
+                                    row.provisioningStatus === 'BOOTSTRAP_FAILED' ||
+                                    row.provisioningStatus === 'FAILED'
+                                  ? 'text-red-400'
+                                  : 'text-amber-400'
+                              }
+                            >
+                              {row.provisioningStatus || 'PENDING'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-slate-300" dir="ltr">
+                            {row.deploymentStatus || row.serverStatus || 'UNPROVISIONED'}
+                          </td>
+                          <td className="py-3 px-4 font-mono" dir="ltr">
+                            <span
+                              className={
+                                row.nodeStatus === 'ONLINE' || row.nodeOnline
+                                  ? 'text-emerald-400'
+                                  : 'text-amber-400'
+                              }
+                            >
+                              {row.nodeStatus || (row.nodeOnline ? 'ONLINE' : 'OFFLINE')}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono" dir="ltr">
                             <span
                               className={
                                 row.status === 'RUNNING' || row.status === 'ONLINE'
                                   ? 'text-emerald-400'
-                                  : row.status === 'SUSPENDED' || row.status === 'ERROR'
+                                  : [
+                                      'SUSPENDED',
+                                      'ERROR',
+                                      'PROVISIONING_FAILED',
+                                      'BOOTSTRAP_FAILED',
+                                    ].includes(row.status)
                                   ? 'text-red-400'
                                   : 'text-amber-400'
                               }
                             >
                               {row.status}
                             </span>
-                          </td>
-                          <td className="py-3 px-4 font-mono text-slate-400" dir="ltr">
-                            {row.cpuLimitPercent}% · {row.memoryLimitMb}MB · {row.diskLimitMb}MB
                           </td>
                         </>
                       )}

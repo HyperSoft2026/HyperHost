@@ -59,12 +59,12 @@ export interface ServerConfig {
   publicUrl: string;
   corsOrigin: string;
   runtimeNodeSecret: string | undefined;
-  runtimeProvisioning: {
-    provider: string | undefined;
+  cleverCloud: {
+    apiBaseUrl: string;
     apiToken: string | undefined;
-    apiEndpoint: string | undefined;
-    region: string | undefined;
-    image: string | undefined;
+    organisationId: string | undefined;
+    apiSecret: string | undefined;
+    zone: string;
   };
 }
 
@@ -81,17 +81,15 @@ const envEncryptionKey = process.env.ENCRYPTION_KEY?.trim();
 const envRuntimeNodeSecret =
   process.env.RUNTIME_NODE_SECRET?.trim() ||
   process.env.NODE_ENROLLMENT_SECRET?.trim() ||
-  process.env.NODE_TOKEN?.trim() ||
   undefined;
-const envRuntimeProvider = process.env.RUNTIME_PROVIDER?.trim() || undefined;
-const envRuntimeProviderToken =
-  process.env.RUNTIME_PROVIDER_API_TOKEN?.trim() || undefined;
-const envRuntimeProviderEndpoint =
-  process.env.RUNTIME_PROVIDER_API_ENDPOINT?.trim() || undefined;
-const envRuntimeProviderRegion =
-  process.env.RUNTIME_PROVIDER_REGION?.trim() || undefined;
-const envRuntimeProviderImage =
-  process.env.RUNTIME_PROVIDER_IMAGE?.trim() || undefined;
+const envCleverCloudApiToken =
+  process.env.CLEVER_CLOUD_API_TOKEN?.trim() || undefined;
+const envCleverCloudOrganisationId =
+  process.env.CLEVER_CLOUD_ORGANISATION_ID?.trim() || undefined;
+const envCleverCloudApiSecret =
+  process.env.CLEVER_CLOUD_API_SECRET?.trim() || undefined;
+const envCleverCloudZone =
+  process.env.CLEVER_CLOUD_ZONE?.trim() || 'par';
 
 const rawAdminIds = (process.env.ADMIN_DISCORD_IDS || '')
   .split(',')
@@ -162,14 +160,20 @@ export const config: ServerConfig = {
   publicUrl: resolvedPublicUrl,
   corsOrigin: process.env.CORS_ORIGIN?.trim() || '*',
   runtimeNodeSecret: envRuntimeNodeSecret,
-  runtimeProvisioning: {
-    provider: envRuntimeProvider,
-    apiToken: envRuntimeProviderToken,
-    apiEndpoint: envRuntimeProviderEndpoint,
-    region: envRuntimeProviderRegion,
-    image: envRuntimeProviderImage,
+  cleverCloud: {
+    apiBaseUrl: 'https://api.clever-cloud.com',
+    apiToken: envCleverCloudApiToken,
+    organisationId: envCleverCloudOrganisationId,
+    apiSecret: envCleverCloudApiSecret,
+    zone: envCleverCloudZone,
   },
 };
+
+export function isCleverCloudProvisioningConfigured(): boolean {
+  return Boolean(
+    config.cleverCloud.apiToken && config.cleverCloud.organisationId
+  );
+}
 
 export function isDiscordOAuthConfigured(): boolean {
   return Boolean(
@@ -193,6 +197,8 @@ export interface EnvironmentDiagnosticsSummary {
   DISCORD_CLIENT_SECRET: EnvDiagnosticState;
   DISCORD_REDIRECT_URI: EnvDiagnosticState;
   DISCORD_BOT_TOKEN: EnvDiagnosticState;
+  CLEVER_CLOUD_API_TOKEN: EnvDiagnosticState;
+  CLEVER_CLOUD_ORGANISATION_ID: EnvDiagnosticState;
   PUBLIC_URL: EnvDiagnosticState;
   NODE_ENV: EnvDiagnosticState;
   PORT: EnvDiagnosticState;
@@ -254,6 +260,12 @@ export function getEnvironmentDiagnosticsSummary(): EnvironmentDiagnosticsSummar
       ? 'configured'
       : 'invalid',
     DISCORD_BOT_TOKEN: config.discord.botToken ? 'configured' : 'missing',
+    CLEVER_CLOUD_API_TOKEN: config.cleverCloud.apiToken
+      ? 'configured'
+      : 'missing',
+    CLEVER_CLOUD_ORGANISATION_ID: config.cleverCloud.organisationId
+      ? 'configured'
+      : 'missing',
     PUBLIC_URL: !rawPublicUrl
       ? 'missing'
       : isValidProductionHttpUrl(rawPublicUrl)

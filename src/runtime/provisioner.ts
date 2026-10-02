@@ -1,377 +1,37 @@
 /**
- * HyperHost Automatic Per-Host Runtime Provisioner
+ * HyperHost Automatic Per-Host Runtime Provisioner (Clever Cloud)
  * Powered by HyperSoft
  *
- * Orchestrates 1-to-1 dedicated Runtime Server & Node provisioning per Host:
- *   Host -> Dedicated Runtime Server -> Dedicated Runtime Node -> Real Host Process
+ * Orchestrates 1-to-1 dedicated Clever Cloud Application & Runtime Node provisioning per Host:
+ *   Host -> Dedicated Clever Cloud Application -> Dedicated Runtime Node Agent -> Real Host Process
  *
- * Strictly enforces real provisioning only: never uses fake servers or fake nodes,
- * never exposes Node/Provider credentials to the frontend or logs, and never transitions
- * a Host to RUNNING without a verified live Server, connected Node Agent, and OS process.
+ * Strictly enforces real provisioning only:
+ *   - Uses CleverCloudRuntimeProvisioner (https://api.clever-cloud.com/)
+ *   - Generates NODE_ID and NODE_TOKEN server-side only (stores only HMAC-SHA256 hash in PostgreSQL)
+ *   - Never exposes Clever Cloud API credentials or NODE_TOKEN to Frontend or logs
+ *   - Never transitions a Host to RUNNING before Node is ONLINE and real process is spawned
  */
-import type {
-  BootstrapRuntimeNodeInput,
-  CreateRuntimeServerInput,
-  ProvisionedServer,
-  RuntimeProvisioner,
-} from './interfaces';
+import type { RuntimeProvisioner } from './interfaces';
+import { CleverCloudRuntimeProvisioner } from './providers/clever-cloud';
 import { runtimeRegistry } from './registry';
 import { config } from '../server/config';
-import { decryptSecret, encryptSecret, generateSecureToken, hashToken } from '../server/crypto';
+import { decryptSecret, generateSecureToken, hashToken } from '../server/crypto';
 import { getPrismaOrThrow } from '../server/database';
 import { AppError } from '../server/errors';
 import { logger } from '../server/logger';
 import { formatEntityPublicId } from '../shared/ids';
 
-const NODE_CONNECTION_WAIT_TIMEOUT_MS = 90_000;
+const NODE_CONNECTION_WAIT_TIMEOUT_MS = 60_000;
 const NODE_CONNECTION_POLL_INTERVAL_MS = 1_000;
 
 export function resolveControlPlaneWsUrl(): string {
-  const base = (config.publicUrl || config.appUrl || '').trim().replace(/\/+$/, '');
+  const base = (config.publicUrl || config.appUrl || '')
+    .trim()
+    .replace(/\/+$/, '');
   const wsBase = base
     .replace(/^https:\/\//i, 'wss://')
     .replace(/^http:\/\//i, 'ws://');
   return `${wsBase}/api/runtime/nodes/ws`;
-}
-
-/**
- * Generates the server-side cloud-init / bootstrap script that automatically configures
- * and starts the standalone Runtime Node Agent on the newly provisioned Runtime Server.
- * Never sent to the browser and never logged.
- */
-export function buildNodeAgentBootstrapScript(params: {
-  controlPlaneWsUrl: string;
-  nodeId: string;
-  nodeToken: string;
-  hostId: string;
-}): string {
-  return [
-    '#!/usr/bin/env bash',
-    'set -euo pipefail',
-    'install -d -m 0700 /etc/hyperhost /var/lib/hyperhost/workspaces',
-    'cat <<\'EOF\' > /etc/hyperhost/node-agent.env',
-    `CONTROL_PLANE_WS_URL=${params.controlPlaneWsUrl}`,
-    `NODE_ID=${params.nodeId}`,
-    `NODE_TOKEN=${params.nodeToken}`,
-    `HOST_ID=${params.hostId}`,
-    'NODE_WORKSPACE_ROOT=/var/lib/hyperhost/workspaces',
-    'EOF',
-    'chmod 0600 /etc/hyperhost/node-agent.env',
-    'if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q "^hyperhost-node-agent\\.service"; then',
-    '  systemctl daemon-reload',
-    '  systemctl enable --now hyperhost-node-agent.service',
-    'else',
-    '  cd /opt/hyperhost && set -a && . /etc/hyperhost/node-agent.env && set +a && nohup npm run start:node-agent >/var/log/hyperhost-node-agent.log 2>&1 &',
-    'fi',
-  ].join('\n');
-}
-
-/**
- * Default truthful RuntimeProvisioner implementation when no external cloud infrastructure
- * provider is configured. Never fabricates servers or pretends provisioning succeeded.
- */
-export class UnconfiguredRuntimeProvisioner implements RuntimeProvisioner {
-  public get providerName(): string {
-    return config.runtimeProvisioning.provider || 'unconfigured';
-  }
-
-  public isConfigured(): boolean {
-    return false;
-  }
-
-  public async createServer(
-    _input: CreateRuntimeServerInput
-  ): Promise<ProvisionedServer> {
-    throw new AppError(
-      'INFRASTRUCTURE_PROVIDER_NOT_CONFIGURED',
-      'Unable to provision runtime server: Infrastructure provider is not configured.',
-      503
-    );
-  }
-
-  public async waitUntilReady(_serverId: string): Promise<ProvisionedServer> {
-    throw new AppError(
-      'INFRASTRUCTURE_PROVIDER_NOT_CONFIGURED',
-      'Unable to provision runtime server: Infrastructure provider is not configured.',
-      503
-    );
-  }
-
-  public async bootstrapNode(_input: BootstrapRuntimeNodeInput): Promise<void> {
-    throw new AppError(
-      'INFRASTRUCTURE_PROVIDER_NOT_CONFIGURED',
-      'Unable to bootstrap runtime node: Infrastructure provider is not configured.',
-      503
-    );
-  }
-
-  public async destroyServer(_serverId: string): Promise<void> {
-    throw new AppError(
-      'INFRASTRUCTURE_PROVIDER_NOT_CONFIGURED',
-      'Unable to destroy runtime server: Infrastructure provider is not configured.',
-      503
-    );
-  }
-}
-
-/**
- * Concrete RuntimeProvisioner implementation for external Cloud Infrastructure APIs
- * (e.g., Hetzner Cloud, DigitalOcean, Clever Cloud / Custom Cloud Orchestrator API).
- * Active only when RUNTIME_PROVIDER, RUNTIME_PROVIDER_API_TOKEN, and RUNTIME_PROVIDER_API_ENDPOINT
- * are configured in the Control Plane environment.
- */
-export class ExternalCloudRuntimeProvisioner implements RuntimeProvisioner {
-  public get providerName(): string {
-    return config.runtimeProvisioning.provider || 'external-cloud';
-  }
-
-  public isConfigured(): boolean {
-    return Boolean(
-      config.runtimeProvisioning.provider &&
-        config.runtimeProvisioning.apiToken &&
-        config.runtimeProvisioning.apiEndpoint
-    );
-  }
-
-  private getEndpointBase(): string {
-    const endpoint = (config.runtimeProvisioning.apiEndpoint || '')
-      .trim()
-      .replace(/\/+$/, '');
-    if (!endpoint) {
-      throw new AppError(
-        'INFRASTRUCTURE_PROVIDER_NOT_CONFIGURED',
-        'Unable to provision runtime server: Infrastructure provider API endpoint is not configured.',
-        503
-      );
-    }
-    return endpoint;
-  }
-
-  private getAuthHeaders(): Record<string, string> {
-    const token = config.runtimeProvisioning.apiToken?.trim();
-    if (!token) {
-      throw new AppError(
-        'INFRASTRUCTURE_PROVIDER_NOT_CONFIGURED',
-        'Unable to provision runtime server: Infrastructure provider API token is not configured.',
-        503
-      );
-    }
-    return {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    };
-  }
-
-  public async createServer(
-    input: CreateRuntimeServerInput
-  ): Promise<ProvisionedServer> {
-    if (!this.isConfigured()) {
-      throw new AppError(
-        'INFRASTRUCTURE_PROVIDER_NOT_CONFIGURED',
-        'Unable to provision runtime server: Infrastructure provider is not configured.',
-        503
-      );
-    }
-
-    const baseUrl = this.getEndpointBase();
-    const res = await fetch(`${baseUrl}/servers`, {
-      method: 'POST',
-      headers: this.getAuthHeaders(),
-      body: JSON.stringify({
-        name: `hyperhost-${input.hostPublicId.toLowerCase()}`,
-        region: config.runtimeProvisioning.region || 'eu-central',
-        image:
-          config.runtimeProvisioning.image || 'ubuntu-24.04-hyperhost-runtime',
-        user_data: input.bootstrapScript,
-        labels: {
-          managed_by: 'hyperhost',
-          host_id: input.hostId,
-          host_public_id: input.hostPublicId,
-          node_id: input.nodeId,
-          runtime: input.runtime,
-        },
-        resources: {
-          memoryLimitMb: input.memoryLimitMb,
-          cpuLimitPercent: input.cpuLimitPercent,
-          diskLimitMb: input.diskLimitMb,
-        },
-      }),
-    });
-
-    if (!res.ok) {
-      throw new AppError(
-        'INFRASTRUCTURE_PROVISIONING_FAILED',
-        `Unable to provision runtime server: Provider returned HTTP ${res.status}.`,
-        502
-      );
-    }
-
-    const data = (await res.json()) as Record<string, any>;
-    const serverObj = data.server || data.droplet || data.data || data;
-    const serverId = String(serverObj?.id || serverObj?.serverId || '').trim();
-    if (!serverId) {
-      throw new AppError(
-        'INFRASTRUCTURE_PROVISIONING_FAILED',
-        'Unable to provision runtime server: Provider did not return a valid serverId.',
-        502
-      );
-    }
-
-    const ipAddress = String(
-      serverObj?.ipAddress ||
-        serverObj?.public_net?.ipv4?.ip ||
-        serverObj?. ipv4 ||
-        '0.0.0.0'
-    );
-    const location = String(
-      serverObj?.location ||
-        serverObj?.datacenter?.name ||
-        config.runtimeProvisioning.region ||
-        'eu-central'
-    );
-    const fqdn = String(
-      serverObj?.fqdn || `srv-${serverId}.${this.providerName}.runtime.hyperhost`
-    );
-
-    return {
-      serverId,
-      provider: this.providerName,
-      ipAddress,
-      fqdn,
-      location,
-      status: 'BOOTING',
-    };
-  }
-
-  public async waitUntilReady(serverId: string): Promise<ProvisionedServer> {
-    const baseUrl = this.getEndpointBase();
-    const deadline = Date.now() + 90_000;
-
-    while (Date.now() < deadline) {
-      const res = await fetch(
-        `${baseUrl}/servers/${encodeURIComponent(serverId)}`,
-        {
-          method: 'GET',
-          headers: this.getAuthHeaders(),
-        }
-      );
-
-      if (!res.ok) {
-        throw new AppError(
-          'INFRASTRUCTURE_PROVISIONING_FAILED',
-          `Unable to inspect runtime server status: Provider returned HTTP ${res.status}.`,
-          502
-        );
-      }
-
-      const data = (await res.json()) as Record<string, any>;
-      const serverObj = data.server || data.droplet || data.data || data;
-      const rawStatus = String(serverObj?.status || '').toUpperCase();
-      const ipAddress = String(
-        serverObj?.ipAddress ||
-          serverObj?.public_net?.ipv4?.ip ||
-          serverObj?.ipv4 ||
-          '0.0.0.0'
-      );
-      const fqdn = String(
-        serverObj?.fqdn ||
-          `srv-${serverId}.${this.providerName}.runtime.hyperhost`
-      );
-      const location = String(
-        serverObj?.location ||
-          serverObj?.datacenter?.name ||
-          config.runtimeProvisioning.region ||
-          'eu-central'
-      );
-
-      if (
-        rawStatus === 'READY' ||
-        rawStatus === 'RUNNING' ||
-        rawStatus === 'ACTIVE' ||
-        rawStatus === 'ONLINE'
-      ) {
-        return {
-          serverId,
-          provider: this.providerName,
-          ipAddress,
-          fqdn,
-          location,
-          status: 'READY',
-        };
-      }
-
-      if (rawStatus === 'ERROR' || rawStatus === 'FAILED') {
-        throw new AppError(
-          'INFRASTRUCTURE_PROVISIONING_FAILED',
-          'Unable to provision runtime server: Provider reported server boot failure.',
-          502
-        );
-      }
-
-      await new Promise((r) => setTimeout(r, 2_000));
-    }
-
-    throw new AppError(
-      'INFRASTRUCTURE_PROVISIONING_TIMEOUT',
-      'Unable to provision runtime server: Timed out waiting for server to become ready.',
-      504
-    );
-  }
-
-  public async bootstrapNode(input: BootstrapRuntimeNodeInput): Promise<void> {
-    const baseUrl = this.getEndpointBase();
-    const res = await fetch(
-      `${baseUrl}/servers/${encodeURIComponent(input.server.serverId)}/bootstrap`,
-      {
-        method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({
-          hostId: input.hostId,
-          nodeId: input.nodeId,
-          controlPlaneWsUrl: input.controlPlaneWsUrl,
-          nodeToken: input.nodeToken,
-          bootstrapScript: input.bootstrapScript,
-        }),
-      }
-    );
-
-    // 404 is allowed if the provider already executed user_data cloud-init during createServer
-    if (!res.ok && res.status !== 404) {
-      throw new AppError(
-        'NODE_BOOTSTRAP_FAILED',
-        `Unable to bootstrap Runtime Node Agent on server (HTTP ${res.status}).`,
-        502
-      );
-    }
-  }
-
-  public async destroyServer(serverId: string): Promise<void> {
-    const baseUrl = this.getEndpointBase();
-    const res = await fetch(
-      `${baseUrl}/servers/${encodeURIComponent(serverId)}`,
-      {
-        method: 'DELETE',
-        headers: this.getAuthHeaders(),
-      }
-    );
-
-    if (!res.ok && res.status !== 404) {
-      throw new AppError(
-        'INFRASTRUCTURE_DESTROY_FAILED',
-        `Failed to destroy Runtime Server ${serverId} (HTTP ${res.status}).`,
-        502
-      );
-    }
-  }
-}
-
-export function createDefaultRuntimeProvisioner(): RuntimeProvisioner {
-  const cloudProvisioner = new ExternalCloudRuntimeProvisioner();
-  if (cloudProvisioner.isConfigured()) {
-    return cloudProvisioner;
-  }
-  return new UnconfiguredRuntimeProvisioner();
 }
 
 export class NodeProvisionerService {
@@ -379,7 +39,7 @@ export class NodeProvisionerService {
   private readonly activeProvisioningHosts = new Set<string>();
 
   constructor(provisioner?: RuntimeProvisioner) {
-    this.provisioner = provisioner || createDefaultRuntimeProvisioner();
+    this.provisioner = provisioner || new CleverCloudRuntimeProvisioner();
   }
 
   public setProvisioner(provisioner: RuntimeProvisioner): void {
@@ -395,8 +55,13 @@ export class NodeProvisionerService {
   }
 
   /**
-   * Provisions a dedicated Runtime Server and dedicated Runtime Node for a single Host:
-   * PENDING -> PROVISIONING -> BOOTSTRAPPING -> NODE_CONNECTING -> NODE_ONLINE -> STARTING -> RUNNING
+   * Provisions a dedicated Clever Cloud Application and dedicated Runtime Node for a single Host:
+   *   PENDING -> PROVISIONING -> BOOTSTRAPPING -> NODE_CONNECTING -> NODE_ONLINE -> STARTING -> RUNNING
+   *
+   * Failure states:
+   *   - Clever Cloud API application creation failure -> PROVISIONING_FAILED
+   *   - Clever Cloud env / deployment / readiness failure -> BOOTSTRAP_FAILED
+   *   - Waiting for Node WebSocket connection -> NODE_CONNECTING
    */
   public async provisionHostRuntime(hostId: string): Promise<void> {
     if (this.activeProvisioningHosts.has(hostId)) {
@@ -406,6 +71,8 @@ export class NodeProvisionerService {
 
     const prisma = getPrismaOrThrow();
     let createdNodeId: string | null = null;
+    let phase: 'PROVISIONING' | 'BOOTSTRAPPING' | 'NODE_CONNECTING' =
+      'PROVISIONING';
 
     try {
       const host = await prisma.host.findUnique({
@@ -430,11 +97,11 @@ export class NodeProvisionerService {
         },
       });
 
-      // 2. Generate secure per-Host Node credentials and create dedicated Node record in PostgreSQL
+      // 2. Generate per-Host NODE_ID and NODE_TOKEN server-side only (store hash only in PostgreSQL)
       const rawNodeToken = `hhnode_${generateSecureToken(32)}`;
       const agentTokenHash = hashToken(rawNodeToken);
-      const bootstrapTokenEncrypted = encryptSecret(rawNodeToken);
-      const dedicatedNodeName = `node-${hostPublicId.toLowerCase()}`;
+      const dedicatedNodeName = `hyperhost-runtime-${hostPublicId.toLowerCase()}`;
+      const locationLabel = `Clever Cloud (${config.cleverCloud.zone || 'par'})`;
 
       const existingDedicatedNode = await prisma.node.findUnique({
         where: { dedicatedHostId: host.id },
@@ -444,10 +111,12 @@ export class NodeProvisionerService {
         ? await prisma.node.update({
             where: { id: existingDedicatedNode.id },
             data: {
+              name: dedicatedNodeName,
+              location: locationLabel,
               status: 'OFFLINE',
               isOnline: false,
               agentTokenHash,
-              bootstrapTokenEncrypted,
+              bootstrapTokenEncrypted: null,
               provider: providerName,
               serverStatus: 'CREATING',
               maxMemoryMb: host.memoryLimitMb,
@@ -458,14 +127,14 @@ export class NodeProvisionerService {
         : await prisma.node.create({
             data: {
               name: dedicatedNodeName,
-              location: config.runtimeProvisioning.region || 'Unassigned',
-              fqdn: `${dedicatedNodeName}.runtime.hyperhost`,
+              location: locationLabel,
+              fqdn: `${dedicatedNodeName}.cleverapps.io`,
               ipAddress: '0.0.0.0',
               daemonPort: 8080,
               status: 'OFFLINE',
               isOnline: false,
               agentTokenHash,
-              bootstrapTokenEncrypted,
+              bootstrapTokenEncrypted: null,
               dedicatedHostId: host.id,
               provider: providerName,
               serverStatus: 'CREATING',
@@ -484,24 +153,7 @@ export class NodeProvisionerService {
         },
       });
 
-      // 3. Build automatic Node Agent bootstrap configuration
-      const controlPlaneWsUrl = resolveControlPlaneWsUrl();
-      const bootstrapScript = buildNodeAgentBootstrapScript({
-        controlPlaneWsUrl,
-        nodeId: dedicatedNode.id,
-        nodeToken: rawNodeToken,
-        hostId: host.id,
-      });
-
-      // 4. Request dedicated Server from Infrastructure Provider
-      if (!this.provisioner.isConfigured()) {
-        throw new AppError(
-          'INFRASTRUCTURE_PROVIDER_NOT_CONFIGURED',
-          'Unable to provision runtime server. Infrastructure provider is not configured.',
-          503
-        );
-      }
-
+      // 3. Create dedicated Clever Cloud Application (hyperhost-runtime-{hostPublicId})
       const createdServer = await this.provisioner.createServer({
         hostId: host.id,
         hostPublicId,
@@ -512,16 +164,23 @@ export class NodeProvisionerService {
         memoryLimitMb: host.memoryLimitMb,
         cpuLimitPercent: host.cpuLimitPercent,
         diskLimitMb: host.diskLimitMb,
-        bootstrapScript,
+        bootstrapScript: 'npm run start:node-agent',
       });
 
+      const provisionedAt = new Date();
+
+      // 4. Transition PROVISIONING -> BOOTSTRAPPING
+      phase = 'BOOTSTRAPPING';
       await Promise.all([
         prisma.host.update({
           where: { id: host.id },
           data: {
+            status: 'BOOTSTRAPPING',
+            provisioningStatus: 'BOOTSTRAPPING',
+            serverStatus: 'DEPLOYING',
             provisionedServerId: createdServer.serverId,
             provider: createdServer.provider,
-            serverStatus: 'BOOTING',
+            provisionedAt,
           },
         }),
         prisma.node.update({
@@ -529,7 +188,7 @@ export class NodeProvisionerService {
           data: {
             provisionedServerId: createdServer.serverId,
             provider: createdServer.provider,
-            serverStatus: 'BOOTING',
+            serverStatus: 'DEPLOYING',
             ipAddress: createdServer.ipAddress || '0.0.0.0',
             fqdn: createdServer.fqdn || dedicatedNode.fqdn,
             location: createdServer.location || dedicatedNode.location,
@@ -537,26 +196,41 @@ export class NodeProvisionerService {
         }),
       ]);
 
-      // 5. Wait until the provisioned Server is ready
+      // 5. Configure Clever Cloud Application env vars (CONTROL_PLANE_WS_URL, NODE_ID, NODE_TOKEN, HOST_ID)
+      //    and deploy the Runtime Node Agent to the Clever Cloud Application
+      const controlPlaneWsUrl = resolveControlPlaneWsUrl();
+      await this.provisioner.bootstrapNode({
+        server: createdServer,
+        hostId: host.id,
+        nodeId: dedicatedNode.id,
+        controlPlaneWsUrl,
+        nodeToken: rawNodeToken,
+        bootstrapScript: 'npm run start:node-agent',
+      });
+
+      // 6. Wait for real Clever Cloud deployment & application readiness
       const readyServer = await this.provisioner.waitUntilReady(
         createdServer.serverId
       );
-      const provisionedAt = new Date();
 
+      const bootstrappedAt = new Date();
+
+      // 7. Transition BOOTSTRAPPING -> NODE_CONNECTING
+      phase = 'NODE_CONNECTING';
       await Promise.all([
         prisma.host.update({
           where: { id: host.id },
           data: {
-            status: 'BOOTSTRAPPING',
-            provisioningStatus: 'BOOTSTRAPPING',
-            serverStatus: 'BOOTSTRAPPING',
-            provisionedAt,
+            status: 'NODE_CONNECTING',
+            provisioningStatus: 'NODE_CONNECTING',
+            serverStatus: 'READY',
+            bootstrappedAt,
           },
         }),
         prisma.node.update({
           where: { id: dedicatedNode.id },
           data: {
-            serverStatus: 'BOOTSTRAPPING',
+            serverStatus: 'READY',
             ipAddress: readyServer.ipAddress || createdServer.ipAddress,
             fqdn: readyServer.fqdn || createdServer.fqdn,
             location: readyServer.location || createdServer.location,
@@ -564,54 +238,35 @@ export class NodeProvisionerService {
         }),
       ]);
 
-      // 6. Bootstrap Runtime Node Agent on the ready Server
-      await this.provisioner.bootstrapNode({
-        server: readyServer,
-        hostId: host.id,
-        nodeId: dedicatedNode.id,
-        controlPlaneWsUrl,
-        nodeToken: rawNodeToken,
-        bootstrapScript,
-      });
-
-      const bootstrappedAt = new Date();
-      await prisma.host.update({
-        where: { id: host.id },
-        data: {
-          status: 'NODE_CONNECTING',
-          provisioningStatus: 'NODE_CONNECTING',
-          serverStatus: 'READY',
-          bootstrappedAt,
-        },
-      });
-
-      // 7. Wait for the dedicated Node Agent to connect via WebSocket
+      // 8. Wait for the dedicated Node Agent to connect via WebSocket
       const connected = await this.waitForNodeWebSocketConnection(
         dedicatedNode.id,
         NODE_CONNECTION_WAIT_TIMEOUT_MS
       );
 
-      if (!connected) {
-        throw new AppError(
-          'RUNTIME_NODE_CONNECTION_TIMEOUT',
-          'Unable to provision runtime server: Timed out waiting for Runtime Node Agent to connect.',
-          504
-        );
+      if (connected) {
+        await this.startHostOnConnectedDedicatedNode(host.id, dedicatedNode.id);
       }
-
-      // 8. Complete transition: NODE_ONLINE -> STARTING -> RUNNING
-      await this.startHostOnConnectedDedicatedNode(host.id, dedicatedNode.id);
+      // If the Node has not connected yet within the initial wait window,
+      // the Host remains in status = 'NODE_CONNECTING' (provisioningStatus = 'NODE_CONNECTING')
+      // and automatically transitions to NODE_ONLINE -> STARTING -> RUNNING as soon as
+      // the Node Agent completes its WebSocket handshake in runtime-nodes.ts.
     } catch (err) {
+      const failureCode =
+        phase === 'BOOTSTRAPPING' ? 'BOOTSTRAP_FAILED' : 'PROVISIONING_FAILED';
       const safeReason =
         err instanceof AppError
           ? err.message
-          : 'Unable to provision runtime server: Infrastructure provisioning failed.';
+          : failureCode === 'BOOTSTRAP_FAILED'
+          ? 'Failed to deploy and start Runtime Node Agent on Clever Cloud Application.'
+          : 'Failed to provision dedicated Clever Cloud Application.';
 
-      logger.warn('Per-Host Runtime Provisioning failed', {
+      logger.warn('Clever Cloud Per-Host Runtime Provisioning failed', {
         hostId,
         nodeId: createdNodeId,
         provider: this.provisioner.providerName,
-        code: err instanceof AppError ? err.code : 'PROVISIONING_FAILED',
+        phase,
+        failureCode,
         reason: safeReason,
       });
 
@@ -619,9 +274,9 @@ export class NodeProvisionerService {
         .update({
           where: { id: hostId },
           data: {
-            status: 'ERROR',
-            provisioningStatus: 'FAILED',
-            serverStatus: 'ERROR',
+            status: failureCode,
+            provisioningStatus: failureCode,
+            serverStatus: failureCode,
             provisioningError: safeReason,
           },
         })
@@ -634,7 +289,7 @@ export class NodeProvisionerService {
             data: {
               status: 'OFFLINE',
               isOnline: false,
-              serverStatus: 'ERROR',
+              serverStatus: failureCode,
               bootstrapTokenEncrypted: null,
             },
           })
@@ -731,7 +386,7 @@ export class NodeProvisionerService {
         where: { id: host.id },
         data: {
           status: 'STARTING',
-          provisioningStatus: 'READY',
+          provisioningStatus: 'STARTING',
         },
       });
 
@@ -762,8 +417,12 @@ export class NodeProvisionerService {
   }
 
   /**
-   * Destroys the Host's dedicated Runtime Server and cleans up its dedicated Runtime Node
-   * when the Host is deleted.
+   * Executes the full 5-step teardown when a Host is deleted:
+   *   1. Stop Host process on the Runtime Node
+   *   2. Disconnect Runtime Node
+   *   3. Delete Node record (or retain retry metadata if Clever Cloud API deletion fails)
+   *   4. Delete dedicated Clever Cloud Application
+   *   5. Update database
    */
   public async destroyHostRuntime(hostId: string): Promise<void> {
     const prisma = getPrismaOrThrow();
@@ -776,43 +435,144 @@ export class NodeProvisionerService {
       return;
     }
 
-    const nodeId = host.nodeId;
+    const nodeId = host.nodeId || host.node?.id || null;
+    const cleverCloudAppId =
+      host.provisionedServerId || host.node?.provisionedServerId || null;
+
+    // 1. Stop Host process & 2. Disconnect Node
     if (nodeId) {
       const connectedAgent = runtimeRegistry.getAgentOrNull(nodeId);
       if (connectedAgent) {
-        await connectedAgent.containerManager.removeContainer(host.id).catch(() => null);
+        await connectedAgent.processManager.stop(host.id, 5).catch(() => null);
+        await connectedAgent.containerManager
+          .removeContainer(host.id)
+          .catch(() => null);
         connectedAgent.disconnect();
         runtimeRegistry.unregisterAgent(nodeId, connectedAgent);
       }
     }
 
-    const serverId =
-      host.provisionedServerId || host.node?.provisionedServerId || null;
-    if (serverId && this.provisioner.isConfigured()) {
+    // 4. Delete dedicated Clever Cloud Application
+    let appDeletedSuccessfully = true;
+    let deleteErrorReason: string | null = null;
+
+    if (cleverCloudAppId) {
       try {
-        await this.provisioner.destroyServer(serverId);
-        logger.info('Destroyed dedicated Runtime Server for deleted Host', {
-          hostId: host.id,
-          serverId,
-          provider: host.provider || this.provisioner.providerName,
-        });
+        await this.provisioner.destroyServer(cleverCloudAppId);
+        logger.info(
+          'Deleted dedicated Clever Cloud Application for deleted Host',
+          {
+            hostId: host.id,
+            cleverCloudAppId,
+            provider: host.provider || this.provisioner.providerName,
+          }
+        );
       } catch (err) {
-        logger.warn('Failed to destroy remote Runtime Server during Host deletion', {
-          hostId: host.id,
-          serverId,
-          reason: err instanceof Error ? err.message : 'Unknown error',
-        });
+        appDeletedSuccessfully = false;
+        deleteErrorReason =
+          err instanceof Error
+            ? err.message
+            : 'Unknown Clever Cloud API error during application deletion';
+
+        logger.error(
+          'Failed to delete dedicated Clever Cloud Application during Host deletion; retaining retry record',
+          {
+            hostId: host.id,
+            nodeId,
+            cleverCloudAppId,
+            organisationId: config.cleverCloud.organisationId || null,
+            reason: deleteErrorReason,
+          }
+        );
+
+        await prisma.activityLog
+          .create({
+            data: {
+              userId: host.ownerId,
+              action: 'Clever Cloud Application Deletion Failed (Retry Queued)',
+              metadata: {
+                deletedHostId: host.id,
+                deletedHostPublicId: host.publicId,
+                cleverCloudApplicationId: cleverCloudAppId,
+                organisationId: config.cleverCloud.organisationId || null,
+                nodeId,
+                provider: 'clever-cloud',
+                retryRequired: true,
+                reason: deleteErrorReason,
+              },
+            },
+          })
+          .catch(() => null);
       }
     }
 
+    // 3. Delete Node record (or mark DELETE_RETRY_REQUIRED if Clever Cloud API deletion failed so it is never orphaned)
     if (nodeId) {
-      await prisma.node
-        .deleteMany({
-          where: {
-            OR: [{ id: nodeId, dedicatedHostId: host.id }, { dedicatedHostId: host.id }],
-          },
-        })
-        .catch(() => null);
+      if (appDeletedSuccessfully) {
+        await prisma.node
+          .deleteMany({
+            where: {
+              OR: [
+                { id: nodeId, dedicatedHostId: host.id },
+                { dedicatedHostId: host.id },
+              ],
+            },
+          })
+          .catch(() => null);
+      } else {
+        await prisma.node
+          .update({
+            where: { id: nodeId },
+            data: {
+              dedicatedHostId: null,
+              status: 'OFFLINE',
+              isOnline: false,
+              serverStatus: 'DELETE_RETRY_REQUIRED',
+              provisionedServerId: cleverCloudAppId,
+              provider: 'clever-cloud',
+            },
+          })
+          .catch(() => null);
+      }
+    }
+  }
+
+  /**
+   * Background retry for any Clever Cloud Applications whose deletion failed during Host teardown.
+   */
+  public async retryOrphanedCleverCloudDeletions(): Promise<void> {
+    if (!this.provisioner.isConfigured()) {
+      return;
+    }
+
+    const prisma = getPrismaOrThrow();
+    const pendingNodes = await prisma.node.findMany({
+      where: {
+        serverStatus: 'DELETE_RETRY_REQUIRED',
+        provisionedServerId: { not: null },
+      },
+      take: 10,
+    });
+
+    for (const node of pendingNodes) {
+      if (!node.provisionedServerId) continue;
+      try {
+        await this.provisioner.destroyServer(node.provisionedServerId);
+        await prisma.node.delete({ where: { id: node.id } });
+        logger.info(
+          'Successfully deleted previously failed Clever Cloud Application on retry',
+          {
+            nodeId: node.id,
+            cleverCloudAppId: node.provisionedServerId,
+          }
+        );
+      } catch (err) {
+        logger.warn('Retry deletion of Clever Cloud Application still failing', {
+          nodeId: node.id,
+          cleverCloudAppId: node.provisionedServerId,
+          reason: err instanceof Error ? err.message : 'Unknown error',
+        });
+      }
     }
   }
 

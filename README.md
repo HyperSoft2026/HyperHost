@@ -39,82 +39,67 @@ HyperHost enforces a strict separation between the **Control Plane** (authentica
 ## Architecture
 
 ```text
-User
- ↓
-Create Host (POST /api/hosts)
- ↓
-HyperHost Control Plane (NodeProvisioner / RuntimeProvisioner)
- ├── 1. Generates cryptographically secure per-Host Node credentials (NODE_ID + NODE_TOKEN)
- ├── 2. Creates dedicated 1-to-1 Node record in PostgreSQL (stores HMAC-SHA256 agentTokenHash)
- ├── 3. Requests dedicated Runtime Server from Infrastructure Provider (createServer)
- ├── 4. Waits until Runtime Server is ready (waitUntilReady)
- ├── 5. Bootstraps standalone Runtime Node Agent on the Server (bootstrapNode)
- ↓
-Dedicated Runtime Server (1-to-1 per Host)
- └── Runtime Node Agent (src/runtime/node-agent.ts)
-      ├── Connects via authenticated WebSocket (wss://CURRENT_HYPERHOST_DOMAIN/api/runtime/nodes/ws)
-      ├── Sends capability handshake (hello) & periodic 15s heartbeats
-      └── Spawns real Host process (child_process.spawn with shell: false)
+HyperHost Control Plane
+        ↓
+Clever Cloud API (https://api.clever-cloud.com/)
+        ↓
+Dedicated Clever Cloud Application (hyperhost-runtime-{hostPublicId})
+        ↓
+Runtime Node Agent (src/runtime/node-agent.ts)
+        ↓
+Host Process
 ```
 
 ```text
-Host A ──► Runtime Server A ──► Node A ──► Host A Process
-Host B ──► Runtime Server B ──► Node B ──► Host B Process
+Host A ──► Clever Cloud App A ──► Node A ──► Host A Process
+Host B ──► Clever Cloud App B ──► Node B ──► Host B Process
 ```
 
 ---
 
-## Automatic Per-Host Runtime Provisioning (`NodeProvisioner`)
+## Automatic Per-Host Runtime Provisioning on Clever Cloud (`CleverCloudRuntimeProvisioner`)
 
-HyperHost implements **Automatic Per-Host Runtime Provisioning** (`src/runtime/provisioner.ts` & `src/runtime/interfaces.ts`). Runtime Nodes are **never** added manually by admins or users, and users **never** interact with `NODE_ID` or `NODE_TOKEN`.
+HyperHost provisions a dedicated **Clever Cloud Node.js Application** for every Host (`src/runtime/providers/clever-cloud.ts` & `src/runtime/provisioner.ts`). Runtime Nodes are **never** added manually by admins or users, and users **never** interact with `NODE_ID`, `NODE_TOKEN`, or `CONTROL_PLANE_WS_URL`.
 
-### 1. `RuntimeProvisioner` Interface
+### 1. Required Control Plane Environment Variables
 
-```ts
-export interface RuntimeProvisioner {
-  readonly providerName: string;
-  isConfigured(): boolean;
-  createServer(input: CreateRuntimeServerInput): Promise<ProvisionedServer>;
-  waitUntilReady(serverId: string): Promise<ProvisionedServer>;
-  bootstrapNode(input: BootstrapRuntimeNodeInput): Promise<void>;
-  destroyServer(serverId: string): Promise<void>;
-}
-```
-
-### 2. Per-Host Provisioning Lifecycle
-
-When a user creates a Host (`POST /api/hosts`), `runtimeProvisionerService.provisionHostRuntime(hostId)` orchestrates the following real lifecycle transitions:
-
-1. `PENDING` → Host record created in PostgreSQL.
-2. `PROVISIONING` → Dedicated 1-to-1 `Node` record created in PostgreSQL (`dedicatedHostId = host.id`) with a freshly generated token (`hhnode_<64-hex>`) hashed via HMAC-SHA256 (`agentTokenHash`), and `createServer()` + `waitUntilReady()` are invoked on the `RuntimeProvisioner`.
-3. `BOOTSTRAPPING` → `bootstrapNode()` injects `CONTROL_PLANE_WS_URL`, `NODE_ID`, `NODE_TOKEN`, and `HOST_ID` onto the new Runtime Server and starts the standalone Node Agent (`npm run start:node-agent`).
-4. `NODE_CONNECTING` → Control Plane waits for the dedicated Node Agent to establish its authenticated WebSocket connection (`/api/runtime/nodes/ws`).
-5. `NODE_ONLINE` → Dedicated Node completes its `hello` handshake and is verified `ONLINE`.
-6. `STARTING` → Control Plane dispatches workspace initialization and `process.start` to the dedicated Node Agent.
-7. `RUNNING` → Dedicated Node Agent spawns the real OS process (`child_process.spawn`) inside the Host's isolated workspace and confirms live execution.
-8. `STOPPED` / `ERROR` → Truthful terminal states when stopped by the user or if infrastructure provisioning / process execution fails.
-
-When a Host is deleted (`DELETE /api/hosts/:id`), `runtimeProvisionerService.destroyHostRuntime(hostId)` automatically stops the Host process, disconnects and deletes the dedicated `Node` record, and invokes `destroyServer(provisionedServerId)` on the Infrastructure Provider.
-
-### 3. External Infrastructure Provider Requirement (المتطلب الخارجي لتزويد السيرفرات تلقائيًا)
-
-Because Clever Cloud hosts the Web Control Plane and PostgreSQL database, provisioning a new dedicated Linux VM/Server per Host requires an external Cloud Infrastructure Provider API (e.g., Hetzner Cloud, DigitalOcean, or a Cloud Orchestrator API endpoint).
-
-Configure the following environment variables on the HyperHost Control Plane to enable live automatic server creation:
+Configure the following server-side variables on the HyperHost Control Plane:
 
 ```dotenv
-RUNTIME_PROVIDER=hetzner-cloud
-RUNTIME_PROVIDER_API_TOKEN=<cloud-provider-api-token>
-RUNTIME_PROVIDER_API_ENDPOINT=https://api.hetzner.cloud/v1
-RUNTIME_PROVIDER_REGION=eu-central
-RUNTIME_PROVIDER_IMAGE=ubuntu-24.04-hyperhost-runtime
+CLEVER_CLOUD_API_TOKEN=<clever-cloud-api-token>
+CLEVER_CLOUD_ORGANISATION_ID=<orga_xxx-or-self>
 ```
 
-If `RUNTIME_PROVIDER`, `RUNTIME_PROVIDER_API_TOKEN`, and `RUNTIME_PROVIDER_API_ENDPOINT` are **not** configured in the Control Plane environment:
-- HyperHost **never** creates fake nodes or fake servers, and **never** marks a Host as `RUNNING`.
-- `UnconfiguredRuntimeProvisioner` truthfully transitions the Host to `status = "ERROR"` (`provisioningStatus = "FAILED"`, `serverStatus = "ERROR"`) with:
-  `Unable to provision runtime server. Infrastructure provider is not configured.`
-- All runtime operations (`Console`, `Files`, `Metrics`, `Start`, `Restart`, `Backups`, `Databases`) continue to report `[RUNTIME_NODE_UNAVAILABLE]` until a real dedicated Runtime Server and Node Agent are provisioned and connected.
+> **Security:** `CLEVER_CLOUD_API_TOKEN`, `NODE_ID`, and `NODE_TOKEN` are handled exclusively on the backend Control Plane, never sent to the Frontend, and automatically scrubbed from logs. Only the HMAC-SHA256 hash (`agentTokenHash`) of `NODE_TOKEN` is stored in PostgreSQL.
+
+### 2. Clever Cloud Public API Provisioning Flow
+
+When a user creates a Host (`POST /api/hosts`), `runtimeProvisionerService.provisionHostRuntime(hostId)` executes:
+
+1. `PENDING` → Creates the `Host` record in PostgreSQL.
+2. `PROVISIONING` →
+   - Generates per-Host `NODE_ID` and `NODE_TOKEN` server-side and stores only `agentTokenHash` in PostgreSQL.
+   - Queries `GET https://api.clever-cloud.com/v2/products/instances` to resolve the active Node.js runtime variant on Clever Cloud.
+   - Calls `POST https://api.clever-cloud.com/v2/organisations/{orgId}/applications` to create a dedicated Clever Cloud Node.js Application named `hyperhost-runtime-{hostPublicIdentifier}`.
+   - If the Clever Cloud API call fails, transitions to `PROVISIONING_FAILED`.
+3. `BOOTSTRAPPING` →
+   - Calls `PUT https://api.clever-cloud.com/v2/organisations/{orgId}/applications/{appId}/env` to inject `CONTROL_PLANE_WS_URL`, `NODE_ID`, `NODE_TOKEN`, `HOST_ID`, and `CC_RUN_COMMAND="npm run start:node-agent"`.
+   - Packages and pushes the standalone Runtime Node Agent (`src/runtime/node-agent.ts` + `package.json`) to the Clever Cloud Application's Git deployment URL (`deployUrl`) and triggers `POST /v2/organisations/{orgId}/applications/{appId}/instances`.
+   - Polls `GET /v2/organisations/{orgId}/applications/{appId}/deployments` and `/instances` until the Clever Cloud deployment and instance reach a real running state.
+   - If deployment or startup fails, transitions to `BOOTSTRAP_FAILED`.
+4. `NODE_CONNECTING` → Waits for the deployed Runtime Node Agent on Clever Cloud to establish its authenticated WebSocket connection (`/api/runtime/nodes/ws`). While the Node has not connected yet, the Host remains in `NODE_CONNECTING`.
+5. `NODE_ONLINE` → Dedicated Node completes its `hello` handshake and is verified `ONLINE`.
+6. `STARTING` → Control Plane dispatches workspace initialization and `process.start` to the dedicated Node Agent.
+7. `RUNNING` → Dedicated Node Agent spawns the real OS process (`child_process.spawn`) inside the Host's isolated workspace.
+
+### 3. Host Deletion & Orphan Prevention
+
+When a Host is deleted (`DELETE /api/hosts/:id`):
+1. Stops the running Host process on the Node.
+2. Disconnects the Runtime Node WebSocket.
+3. Calls `DELETE https://api.clever-cloud.com/v2/organisations/{orgId}/applications/{appId}` to delete the dedicated Clever Cloud Application.
+4. Deletes the `Node` and `Host` records in PostgreSQL.
+5. If Clever Cloud API deletion fails transiently, logs the error, records a retry audit entry, and marks the Node record `DELETE_RETRY_REQUIRED` so the Control Plane Scheduler automatically retries deleting the Clever Cloud Application.
 
 ---
 

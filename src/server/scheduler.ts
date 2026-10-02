@@ -1,5 +1,6 @@
 import { checkDatabaseHealth, getPrismaOrThrow } from './database';
 import { NODE_HEARTBEAT_TIMEOUT_MS, runtimeRegistry } from '../runtime/registry';
+import { runtimeProvisionerService } from '../runtime/provisioner';
 import { logger } from './logger';
 
 export class ControlPlaneScheduler {
@@ -67,6 +68,9 @@ export class ControlPlaneScheduler {
           },
         });
       }
+
+      // Retry deleting any Clever Cloud Applications whose deletion failed during Host teardown
+      await runtimeProvisionerService.retryOrphanedCleverCloudDeletions();
 
       const dueSchedules = await prisma.schedule.findMany({
         where: {

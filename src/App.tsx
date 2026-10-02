@@ -916,7 +916,11 @@ export default function App() {
                                 className={`text-xs font-medium shrink-0 ${
                                   isOnline
                                     ? 'text-emerald-400'
-                                    : host.status === 'ERROR'
+                                    : [
+                                        'ERROR',
+                                        'PROVISIONING_FAILED',
+                                        'BOOTSTRAP_FAILED',
+                                      ].includes(host.status)
                                     ? 'text-red-400'
                                     : [
                                         'PENDING',

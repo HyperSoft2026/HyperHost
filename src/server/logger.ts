@@ -47,6 +47,7 @@ function scrubSensitiveStrings(input: string): string {
     )
     .replace(/\b(Bot|Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [REDACTED]')
     .replace(/([?&](?:token|node_token|secret)=)[^&\s"']+/gi, '$1[REDACTED]')
+    .replace(/\b(NODE_TOKEN|RUNTIME_NODE_SECRET|NODE_ENROLLMENT_SECRET|CLEVER_CLOUD_API_TOKEN|CLEVER_CLOUD_API_SECRET)=[^\s"']+/gi, '$1=[REDACTED]')
     .replace(/\bhhnode_[A-Za-z0-9._~+/=-]+/gi, '[REDACTED]');
 }
 

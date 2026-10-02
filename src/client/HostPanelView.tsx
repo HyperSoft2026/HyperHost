@@ -659,7 +659,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
         <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-xs text-red-200 flex items-start gap-2.5">
           <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
           <div className="font-mono" dir="ltr">
-            [PROVISIONING_FAILED] {hostData.provisioningError}
+            [{hostData.provisioningStatus || 'PROVISIONING_FAILED'}] {hostData.provisioningError}
           </div>
         </div>
       )}
