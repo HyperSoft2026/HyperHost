@@ -164,7 +164,7 @@ export const config: ServerConfig = {
   },
   appUrl: resolvedPublicUrl,
   publicUrl: resolvedPublicUrl,
-  corsOrigin: process.env.CORS_ORIGIN?.trim() || '*',
+  corsOrigin: process.env.CORS_ORIGIN?.trim() || '',
   runtimeNodeSecret: envRuntimeNodeSecret,
   cleverCloud: {
     apiBaseUrl: envCleverCloudApiBaseUrl,
@@ -175,6 +175,58 @@ export const config: ServerConfig = {
     sshPublicKey: envCleverCloudSshPublicKey,
   },
 };
+
+export function isAllowedCorsOrigin(
+  origin: string | undefined,
+  nodeEnvOverride?: 'development' | 'production' | 'test'
+): boolean {
+  if (!origin) return true; // Direct same-origin requests or non-browser clients
+  const currentEnv = nodeEnvOverride || config.nodeEnv;
+  const normalized = origin.trim().replace(/\/+$/, '');
+
+  const allowedOrigins = new Set<string>();
+
+  if (config.publicUrl) {
+    try {
+      allowedOrigins.add(new URL(config.publicUrl).origin);
+    } catch {}
+  }
+  if (config.appUrl) {
+    try {
+      allowedOrigins.add(new URL(config.appUrl).origin);
+    } catch {}
+  }
+  allowedOrigins.add('https://app-1cc68a22-3748-4fa2-95be-e02404cad0a6.cleverapps.io');
+
+  if (process.env.CORS_ORIGIN && process.env.CORS_ORIGIN !== '*') {
+    for (const item of process.env.CORS_ORIGIN.split(',')) {
+      const trimmed = item.trim().replace(/\/+$/, '');
+      if (trimmed) {
+        try {
+          allowedOrigins.add(new URL(trimmed).origin);
+        } catch {
+          allowedOrigins.add(trimmed);
+        }
+      }
+    }
+  }
+
+  if (allowedOrigins.has(normalized)) {
+    return true;
+  }
+
+  // Development & test environments allow localhost & preview runtimes
+  if (currentEnv !== 'production') {
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalized)) {
+      return true;
+    }
+    if (/^https:\/\/ais-(?:dev|pre)-[a-z0-9-]+\.[a-z0-9-]+\.run\.app$/.test(normalized)) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 export function isCleverCloudProvisioningConfigured(): boolean {
   return Boolean(

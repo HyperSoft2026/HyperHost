@@ -83,7 +83,7 @@ export async function resolveAuthContext(
       ((request.body as Record<string, unknown> | null)?._csrf as string | undefined)?.trim();
 
     const validCsrf =
-      Boolean(rawCsrf) &&
+      typeof rawCsrf === 'string' &&
       rawCsrf.length >= 16 &&
       safeTimingEqual(rawCsrf, session.csrfToken);
 
@@ -283,4 +283,5 @@ export async function recordActivityLog(params: {
 
 export function clearSessionCookie(reply: FastifyReply, request: FastifyRequest): void {
   reply.clearCookie(SESSION_COOKIE_NAME, getSessionCookieOptions(request));
+  reply.clearCookie(CSRF_COOKIE_NAME, getCsrfCookieOptions(request));
 }

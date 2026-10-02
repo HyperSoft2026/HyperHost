@@ -37,6 +37,7 @@ export function resolveControlPlaneWsUrl(): string {
 export class NodeProvisionerService {
   private provisioner: RuntimeProvisioner;
   private readonly activeProvisioningHosts = new Set<string>();
+  private readonly activeStartingHosts = new Set<string>();
 
   constructor(provisioner?: RuntimeProvisioner) {
     this.provisioner = provisioner || new CleverCloudRuntimeProvisioner();
@@ -288,15 +289,13 @@ export class NodeProvisionerService {
         }),
       ]);
 
-      // 8. Wait for the dedicated Node Agent to connect via WebSocket
-      const connected = await this.waitForNodeWebSocketConnection(
+      // 8. Wait for the dedicated Node Agent to connect via WebSocket.
+      // The WebSocket handshake handler in runtime-nodes.ts is the single authoritative source of truth
+      // for Node ONLINE that triggers Host startup upon connection.
+      await this.waitForNodeWebSocketConnection(
         dedicatedNode.id,
         NODE_CONNECTION_WAIT_TIMEOUT_MS
       );
-
-      if (connected) {
-        await this.startHostOnConnectedDedicatedNode(host.id, dedicatedNode.id);
-      }
       // If the Node has not connected yet within the initial wait window,
       // the Host remains in status = 'NODE_CONNECTING' (provisioningStatus = 'NODE_CONNECTING')
       // and automatically transitions to NODE_ONLINE -> STARTING -> RUNNING as soon as
@@ -379,125 +378,138 @@ export class NodeProvisionerService {
     hostId: string,
     nodeId: string
   ): Promise<void> {
-    const prisma = getPrismaOrThrow();
-    const agent = runtimeRegistry.getAgentOrNull(nodeId);
-    if (!agent) {
-      return;
-    }
-
-    const host = await prisma.host.findUnique({
-      where: { id: hostId },
-      include: {
-        environments: true,
-        allocations: true,
-      },
-    });
-
-    if (!host) {
-      return;
-    }
-
-    // Concurrency-safe atomic guard: Only allow the first caller to transition the Host
-    // into NODE_ONLINE/STARTING. Any subsequent or concurrent caller will find claimResult.count === 0 and exit.
-    const now = new Date();
-    const claimResult = await prisma.host.updateMany({
-      where: {
-        id: host.id,
-        status: {
-          in: ['PENDING', 'PROVISIONING', 'BOOTSTRAPPING', 'NODE_CONNECTING'],
-        },
-      },
-      data: {
-        status: 'NODE_ONLINE',
-        provisioningStatus: 'NODE_ONLINE',
-        serverStatus: 'ONLINE',
-        nodeConnectedAt: now,
-        provisioningError: null,
-      },
-    });
-
-    if (claimResult.count === 0) {
-      logger.info('Host start already claimed or in progress, skipping duplicate startup', {
+    if (this.activeStartingHosts.has(hostId)) {
+      logger.info('Host start already in active local execution, skipping duplicate startup', {
         hostId,
         nodeId,
       });
       return;
     }
-
-    await prisma.node.update({
-      where: { id: nodeId },
-      data: {
-        status: 'ONLINE',
-        isOnline: true,
-        serverStatus: 'ONLINE',
-        lastHeartbeatAt: now,
-        bootstrapTokenEncrypted: null,
-      },
-    }).catch(() => null);
-
-    const decryptedEnv: Record<string, string> = {};
-    for (const env of host.environments) {
-      try {
-        decryptedEnv[env.key] = decryptSecret(env.encryptedValue);
-      } catch {
-        // Ignore unreadable secret
-      }
-    }
-
-    const spec = {
-      hostId: host.id,
-      runtime: host.runtime,
-      runtimeVersion: host.runtimeVersion,
-      dockerImage: host.dockerImage,
-      startupCommand: host.startupCommand,
-      startupArgs: host.startupArgs,
-      workingDirectory: host.workingDirectory,
-      environment: decryptedEnv,
-      resources: {
-        memoryLimitMb: host.memoryLimitMb,
-        cpuLimitPercent: host.cpuLimitPercent,
-        diskLimitMb: host.diskLimitMb,
-      },
-      allocations: host.allocations.map((a) => ({
-        ipAddress: a.ipAddress,
-        port: a.port,
-        protocol: a.protocol,
-        isPrimary: a.isPrimary,
-      })),
-    };
+    this.activeStartingHosts.add(hostId);
 
     try {
-      await prisma.host.update({
-        where: { id: host.id },
-        data: {
-          status: 'STARTING',
-          provisioningStatus: 'STARTING',
+      const prisma = getPrismaOrThrow();
+      const agent = runtimeRegistry.getAgentOrNull(nodeId);
+      if (!agent) {
+        return;
+      }
+
+      const host = await prisma.host.findUnique({
+        where: { id: hostId },
+        include: {
+          environments: true,
+          allocations: true,
         },
       });
 
-      await agent.containerManager.createContainer(spec);
-      await agent.processManager.start(host.id, spec);
+      if (!host) {
+        return;
+      }
 
-      await prisma.host.update({
-        where: { id: host.id },
+      // Concurrency-safe atomic guard: Only allow the first caller to transition the Host
+      // into NODE_ONLINE/STARTING. Any subsequent or concurrent caller will find claimResult.count === 0 and exit.
+      const now = new Date();
+      const claimResult = await prisma.host.updateMany({
+        where: {
+          id: host.id,
+          status: {
+            in: ['PENDING', 'PROVISIONING', 'BOOTSTRAPPING', 'NODE_CONNECTING'],
+          },
+        },
         data: {
-          status: 'RUNNING',
-          provisioningStatus: 'READY',
+          status: 'NODE_ONLINE',
+          provisioningStatus: 'NODE_ONLINE',
           serverStatus: 'ONLINE',
+          nodeConnectedAt: now,
+          provisioningError: null,
         },
       });
-    } catch (err) {
-      const reason =
-        err instanceof Error ? err.message : 'Host process failed to start.';
-      await prisma.host
-        .update({
+
+      if (claimResult.count === 0) {
+        logger.info('Host start already claimed or in progress, skipping duplicate startup', {
+          hostId,
+          nodeId,
+        });
+        return;
+      }
+
+      await prisma.node.update({
+        where: { id: nodeId },
+        data: {
+          status: 'ONLINE',
+          isOnline: true,
+          serverStatus: 'ONLINE',
+          lastHeartbeatAt: now,
+          bootstrapTokenEncrypted: null,
+        },
+      }).catch(() => null);
+
+      const decryptedEnv: Record<string, string> = {};
+      for (const env of host.environments) {
+        try {
+          decryptedEnv[env.key] = decryptSecret(env.encryptedValue);
+        } catch {
+          // Ignore unreadable secret
+        }
+      }
+
+      const spec = {
+        hostId: host.id,
+        runtime: host.runtime,
+        runtimeVersion: host.runtimeVersion,
+        dockerImage: host.dockerImage,
+        startupCommand: host.startupCommand,
+        startupArgs: host.startupArgs,
+        workingDirectory: host.workingDirectory,
+        environment: decryptedEnv,
+        resources: {
+          memoryLimitMb: host.memoryLimitMb,
+          cpuLimitPercent: host.cpuLimitPercent,
+          diskLimitMb: host.diskLimitMb,
+        },
+        allocations: host.allocations.map((a) => ({
+          ipAddress: a.ipAddress,
+          port: a.port,
+          protocol: a.protocol,
+          isPrimary: a.isPrimary,
+        })),
+      };
+
+      try {
+        await prisma.host.update({
           where: { id: host.id },
           data: {
-            status: 'ERROR',
-            provisioningError: reason,
+            status: 'STARTING',
+            provisioningStatus: 'STARTING',
           },
-        })
-        .catch(() => null);
+        });
+
+        await agent.containerManager.createContainer(spec);
+        await agent.processManager.start(host.id, spec);
+
+        await prisma.host.update({
+          where: { id: host.id },
+          data: {
+            status: 'RUNNING',
+            provisioningStatus: 'READY',
+            serverStatus: 'ONLINE',
+          },
+        });
+      } catch (err) {
+        const reason =
+          err instanceof Error ? err.message : 'Host process failed to start.';
+        await prisma.host
+          .update({
+            where: { id: host.id },
+            data: {
+              status: 'ERROR',
+              provisioningError: reason,
+            },
+          })
+          .catch(() => null);
+      }
+    } finally {
+      this.activeStartingHosts.delete(hostId);
     }
   }
 

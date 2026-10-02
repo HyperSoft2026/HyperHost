@@ -1,4 +1,5 @@
-import { config } from './config';
+const isProduction =
+  process.env.NODE_ENV === 'production' || process.argv.includes('--production');
 
 type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
 
@@ -102,7 +103,7 @@ function writeLog(
   };
 
   const line =
-    config.nodeEnv === 'production'
+    isProduction
       ? JSON.stringify(entry)
       : `[${entry.timestamp}] [${level}] ${safeMessage}${
           safeContext ? ` ${JSON.stringify(safeContext)}` : ''
@@ -123,7 +124,7 @@ export const logger = {
   error: (message: string, meta?: Record<string, unknown>) =>
     writeLog('ERROR', message, meta),
   debug: (message: string, meta?: Record<string, unknown>) => {
-    if (config.nodeEnv !== 'production') {
+    if (!isProduction) {
       writeLog('DEBUG', message, meta);
     }
   },

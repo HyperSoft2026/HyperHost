@@ -11,6 +11,7 @@
     "postinstall": "prisma generate",
     "prepare": "vite build",
     "dev": "tsx src/server/index.ts",
+    "test": "node --import tsx --test tests/**/*.test.ts",
     "build": "prisma generate && tsc --noEmit && vite build",
     "prestart": "npm run db:deploy",
     "start": "tsx src/server/index.ts --production",

@@ -420,7 +420,9 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
         {currentPath === '/about' && (
           <AboutPageContent onNavigate={onNavigate} />
         )}
-        {currentPath === '/contact' && <ContactPageContent />}
+        {currentPath === '/contact' && (
+          <ContactPageContent user={user} onLogin={handleDiscordLogin} />
+        )}
         {currentPath === '/terms' && <TermsPageContent />}
         {currentPath === '/privacy' && <PrivacyPageContent />}
       </main>
@@ -1167,17 +1169,62 @@ const AboutPageContent: React.FC<{
 /* ============================================================================
  * 5. CONTACT PAGE (/contact)
  * ========================================================================== */
-const ContactPageContent: React.FC = () => {
+const ContactPageContent: React.FC<{
+  user: AuthenticatedUserDTO | null;
+  onLogin: () => void;
+}> = ({ user, onLogin }) => {
   const { t, isRtl } = useI18n();
   const [subject, setSubject] = useState('');
-  const [discordHandle, setDiscordHandle] = useState('');
   const [message, setMessage] = useState('');
-  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submittedResult, setSubmittedResult] = useState<{
+    referenceId: string;
+    discordNotified: boolean;
+  } | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     if (!subject.trim() || !message.trim()) return;
-    setSubmitted(true);
+
+    if (!user) {
+      onLogin();
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await apiFetch<{
+        referenceId: string;
+        status: string;
+        discordNotified: boolean;
+      }>('/api/support', {
+        method: 'POST',
+        body: JSON.stringify({
+          subject: subject.trim(),
+          message: message.trim(),
+        }),
+      });
+      setSubmittedResult({
+        referenceId: res.referenceId,
+        discordNotified: res.discordNotified,
+      });
+      setSubject('');
+      setMessage('');
+    } catch (err) {
+      if (err instanceof ClientApiError) {
+        setError(`[${err.code}] ${err.message}`);
+      } else {
+        setError(
+          isRtl
+            ? 'تعذّر إرسال التذكرة، يرجى المحاولة لاحقاً.'
+            : 'Failed to submit inquiry, please try again.'
+        );
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -1238,23 +1285,64 @@ const ContactPageContent: React.FC = () => {
         <div className="md:col-span-7">
           <div className="p-6 sm:p-8 rounded-2xl bg-[#101220] border border-slate-800 space-y-5">
             <h2 className="text-base font-bold text-white">
-              {isRtl ? 'إرسال رسالة أو استفسار' : 'Prepare Support Inquiry'}
+              {isRtl ? 'إرسال تذكرة دعم فني' : 'Submit Support Inquiry'}
             </h2>
 
-            {submitted ? (
-              <div className="p-5 rounded-xl bg-emerald-950/40 border border-emerald-800/60 space-y-3 text-xs text-emerald-200">
+            {/* Clear Security Warning Banner */}
+            <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-800/60 text-xs text-amber-200 flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <span className="font-bold">
+                  {isRtl ? 'تنبيه أمني هام: ' : 'Security Notice: '}
+                </span>
+                <span>
+                  {isRtl
+                    ? 'لا تشارك كلمات المرور أو Discord tokens أو API keys أو أي بيانات سرية.'
+                    : 'Do not share passwords, Discord tokens, API keys, or sensitive secrets.'}
+                </span>
+              </div>
+            </div>
+
+            {error && (
+              <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-800/60 text-xs text-rose-200">
+                {error}
+              </div>
+            )}
+
+            {submittedResult ? (
+              <div className="p-5 rounded-xl bg-emerald-950/40 border border-emerald-800/60 space-y-4 text-xs text-emerald-200">
                 <div className="flex items-center gap-2 font-bold text-sm">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   <span>
                     {isRtl
-                      ? 'تم تجهيز تفاصيل طلبك بنجاح'
-                      : 'Your inquiry details are ready'}
+                      ? 'تم إنشاء طلب الدعم بنجاح (Support request created successfully).'
+                      : 'Support request created successfully.'}
                   </span>
                 </div>
+                <div className="p-3 rounded-lg bg-[#090A12] border border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">
+                      {isRtl ? 'رقم التذكرة المرجعي:' : 'Reference ID:'}
+                    </span>
+                    <span className="font-mono text-sm font-bold text-violet-300" dir="ltr">
+                      {submittedResult.referenceId}
+                    </span>
+                  </div>
+                </div>
                 <p className="text-slate-300 leading-relaxed">
-                  {isRtl
-                    ? 'يرجى الانضمام إلى سيرفر HyperSoft الرسمي على Discord ومشاركة هذا الملخص مع فريق الدعم للمتابعة الفورية.'
-                    : 'Please join the official HyperSoft Discord server to submit this ticket directly to our support engineers.'}
+                  {submittedResult.discordNotified ? (
+                    <span className="text-emerald-300 font-medium">
+                      {isRtl
+                        ? '✓ تم إرسال إشعار الدعم الفني الفوري إلى فريق HyperHost عبر Discord.'
+                        : '✓ Real-time notification dispatched to HyperHost Discord team.'}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">
+                      {isRtl
+                        ? 'ℹ تم حفظ تذكرتك بنجاح في قاعدة البيانات وسيتم مراجعتها من قِبل فريق الدعم (تعذّر إرسال إشعار Discord المباشر).'
+                        : 'ℹ Ticket stored securely in system database for review (direct Discord DM notification was unavailable).'}
+                    </span>
+                  )}
                 </p>
                 <div className="flex items-center gap-3 pt-1">
                   <a
@@ -1271,44 +1359,70 @@ const ContactPageContent: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      setSubmitted(false);
-                      setSubject('');
-                      setMessage('');
+                      setSubmittedResult(null);
                     }}
                     className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer"
                   >
-                    {isRtl ? 'رسالة جديدة' : 'New Inquiry'}
+                    {isRtl ? 'تذكرة جديدة' : 'New Ticket'}
                   </button>
                 </div>
               </div>
+            ) : !user ? (
+              <div className="p-6 rounded-xl bg-[#090A12] border border-slate-800 text-center space-y-4">
+                <p className="text-xs text-slate-300">
+                  {isRtl
+                    ? 'يرجى تسجيل الدخول عبر حساب Discord لتقديم تذكرة دعم فني مرتبطة بمعرّف حسابك العام.'
+                    : 'Please sign in with Discord OAuth2 to submit an authenticated support inquiry tied to your Public User ID.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={onLogin}
+                  className="px-5 py-2.5 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <DiscordIcon className="w-4 h-4" />
+                  <span>{t.loginWithDiscord}</span>
+                </button>
+              </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    {isRtl ? 'حساب Discord أو المعرّف العام (usr_...)' : 'Discord Username or Public User ID (usr_...)'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={discordHandle}
-                    onChange={(e) => setDiscordHandle(e.target.value)}
-                    placeholder="username / usr_..."
-                    dir="ltr"
-                    className="w-full px-3.5 py-2.5 text-xs font-mono bg-[#080911] border border-slate-800 rounded-xl text-white focus:outline-none focus:border-violet-500"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block text-slate-400 mb-1 font-medium">
+                      {isRtl ? 'المعرّف العام (Public ID)' : 'Public ID'}
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      value={user.publicId}
+                      dir="ltr"
+                      className="w-full px-3.5 py-2 text-xs font-mono bg-[#090A12] border border-slate-800 rounded-xl text-slate-400 cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 mb-1 font-medium">
+                      {isRtl ? 'اسم المستخدم (Discord)' : 'Discord Username'}
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      value={user.displayName || user.username}
+                      className="w-full px-3.5 py-2 text-xs bg-[#090A12] border border-slate-800 rounded-xl text-slate-400 cursor-not-allowed"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    {isRtl ? 'موضوع الرسالة' : 'Subject'}
+                    {isRtl ? 'موضوع الرسالة' : 'Subject'} *
                   </label>
                   <input
                     type="text"
                     required
+                    maxLength={128}
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
                     placeholder={
                       isRtl
-                        ? 'مثال: استفسار حول إعدادات الاستضافة'
+                        ? 'مثال: استفسار حول إعدادات الاستضافة أو البوت'
                         : 'e.g. Host runtime configuration inquiry'
                     }
                     className="w-full px-3.5 py-2.5 text-xs bg-[#080911] border border-slate-800 rounded-xl text-white focus:outline-none focus:border-violet-500"
@@ -1316,26 +1430,30 @@ const ContactPageContent: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                    {isRtl ? 'تفاصيل الاستفسار' : 'Message'}
+                    {isRtl ? 'تفاصيل الاستفسار' : 'Details'} *
                   </label>
                   <textarea
                     rows={4}
                     required
+                    maxLength={2000}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     placeholder={
                       isRtl
-                        ? 'اكتب تفاصيل استفسارك هنا (لا تشارك أي كلمات مرور أو توكنات سرية)...'
-                        : 'Describe your request (never include secret tokens or passwords)...'
+                        ? 'اكتب تفاصيل استفسارك هنا...'
+                        : 'Describe your inquiry in detail...'
                     }
-                    className="w-full px-3.5 py-2.5 text-xs bg-[#080911] border border-slate-800 rounded-xl text-white focus:outline-none focus:border-violet-500"
+                    className="w-full px-3.5 py-2.5 text-xs bg-[#080911] border border-slate-800 rounded-xl text-white focus:outline-none focus:border-violet-500 resize-none"
                   />
                 </div>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold cursor-pointer"
+                  disabled={submitting}
+                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold cursor-pointer disabled:opacity-50"
                 >
-                  {isRtl ? 'متابعة التواصل' : 'Continue'}
+                  {submitting
+                    ? isRtl ? 'جاري الإرسال...' : 'Submitting...'
+                    : isRtl ? 'إرسال التذكرة' : 'Submit Ticket'}
                 </button>
               </form>
             )}

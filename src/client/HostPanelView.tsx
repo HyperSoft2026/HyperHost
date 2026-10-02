@@ -22,7 +22,9 @@ import {
   Trash2,
   Copy,
   Check,
+  Loader2,
 } from 'lucide-react';
+import { ConfirmDialog } from './ConfirmDialog';
 import {
   HOST_PERMISSIONS,
   RUNTIME_CATALOG,
@@ -151,7 +153,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
 
   useEffect(() => {
     if (hostId) {
-      void loadHostDetail();
+      void loadHostDetail(true);
     }
   }, [hostId]);
 
@@ -170,7 +172,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
       return;
     }
     const timer = window.setInterval(() => {
-      void loadHostDetail();
+      void loadHostDetail(false);
     }, 2500);
     return () => window.clearInterval(timer);
   }, [hostId, hostData?.status]);
@@ -192,28 +194,37 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
     void loadTabResource(activeTab);
   }, [activeTab, hostId]);
 
-  async function loadHostDetail() {
+  async function loadHostDetail(isInitial = false) {
     if (!hostId) return;
-    setLoading(true);
-    setPanelError(null);
+    if (isInitial) {
+      setLoading(true);
+      setPanelError(null);
+    }
     try {
       const res = await apiFetch<{ host: any; access: any }>(`/api/hosts/${hostId}`);
       setHostData(res.host);
-      setSettingsName(res.host.name);
-      setSettingsDesc(res.host.description || '');
-      setStartupRuntime(res.host.runtime);
-      setStartupVersion(res.host.runtimeVersion);
-      setStartupCommand(res.host.startupCommand);
-      setStartupArgs((res.host.startupArgs || []).join(' '));
-      setWorkingDir(res.host.workingDirectory);
+      // Only initialize input form fields on initial load or if user hasn't populated them yet
+      if (isInitial || !hostData) {
+        setSettingsName(res.host.name);
+        setSettingsDesc(res.host.description || '');
+        setStartupRuntime(res.host.runtime);
+        setStartupVersion(res.host.runtimeVersion);
+        setStartupCommand(res.host.startupCommand);
+        setStartupArgs((res.host.startupArgs || []).join(' '));
+        setWorkingDir(res.host.workingDirectory);
+      }
     } catch (err) {
-      if (err instanceof ClientApiError) {
-        setPanelError(`[${err.code}] ${err.message}`);
-      } else {
-        setPanelError('Failed to load Host metadata.');
+      if (isInitial) {
+        if (err instanceof ClientApiError) {
+          setPanelError(`[${err.code}] ${err.message}`);
+        } else {
+          setPanelError('Failed to load Host metadata.');
+        }
       }
     } finally {
-      setLoading(false);
+      if (isInitial) {
+        setLoading(false);
+      }
     }
   }
 
@@ -329,35 +340,229 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
     }
   }
 
-  async function handlePowerAction(action: 'start' | 'stop' | 'restart' | 'kill' | 'reinstall') {
+  // Confirm Dialog State & Actions
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    variant?: 'danger' | 'warning' | 'primary';
+    bulletPoints?: string[];
+    action: () => Promise<void> | void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    action: () => {},
+  });
+  const [confirmActionLoading, setConfirmActionLoading] = useState(false);
+
+  function requestConfirmation(options: {
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    variant?: 'danger' | 'warning' | 'primary';
+    bulletPoints?: string[];
+    action: () => Promise<void> | void;
+  }) {
+    setConfirmModal({
+      isOpen: true,
+      title: options.title,
+      message: options.message,
+      confirmLabel: options.confirmLabel,
+      cancelLabel: options.cancelLabel,
+      variant: options.variant || 'danger',
+      bulletPoints: options.bulletPoints || [],
+      action: options.action,
+    });
+  }
+
+  async function handleConfirmSubmit() {
+    setConfirmActionLoading(true);
+    try {
+      await confirmModal.action();
+      setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+    } catch (err) {
+      if (err instanceof ClientApiError) {
+        setPanelError(`[${err.code}] ${err.message}`);
+      } else if (err instanceof Error) {
+        setPanelError(err.message);
+      }
+    } finally {
+      setConfirmActionLoading(false);
+    }
+  }
+
+  async function executePowerAction(action: 'start' | 'stop' | 'restart' | 'kill' | 'reinstall') {
     setPanelError(null);
     setPanelNotice(null);
     if (!hostId) {
       setPanelError(`[RUNTIME_NODE_UNAVAILABLE] ${t['runtime.node.unavailable']}`);
       return;
     }
-    try {
-      await apiFetch(`/api/hosts/${hostId}/management`, {
-        method: 'POST',
-        body: JSON.stringify({ action }),
-      });
-      setPanelNotice(
-        isRtl
-          ? `تم إرسال إشارة (${action.toUpperCase()}) إلى عقدة التشغيل.`
-          : `Dispatched ${action.toUpperCase()} signal to Runtime Node.`
-      );
-      void loadHostDetail();
-    } catch (err) {
-      if (err instanceof ClientApiError) {
-        setPanelError(`[${err.code}] ${err.message}`);
-      } else {
-        setPanelError(
-          isRtl
-            ? 'فشل إرسال أمر إدارة التشغيل.'
-            : 'Management command failed.'
-        );
-      }
-    }
+    await apiFetch(`/api/hosts/${hostId}/management`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    });
+    setPanelNotice(
+      isRtl
+        ? `تم إرسال إشارة (${action.toUpperCase()}) إلى عقدة التشغيل.`
+        : `Dispatched ${action.toUpperCase()} signal to Runtime Node.`
+    );
+    void loadHostDetail(false);
+  }
+
+  function handlePowerAction(action: 'start' | 'stop' | 'restart' | 'kill' | 'reinstall') {
+    const titles: Record<string, string> = {
+      start: isRtl ? 'تأكيد تشغيل الاستضافة' : 'Confirm Start Host',
+      stop: isRtl ? 'تأكيد إيقاف الاستضافة' : 'Confirm Stop Host',
+      restart: isRtl ? 'تأكيد إعادة تشغيل الاستضافة' : 'Confirm Restart Host',
+      kill: isRtl ? 'تأكيد الإنهاء القسري (Kill)' : 'Confirm Force Kill',
+      reinstall: isRtl ? 'تأكيد إعادة تثبيت البيئة' : 'Confirm Reinstall Container',
+    };
+    const messages: Record<string, string> = {
+      start: isRtl
+        ? 'هل تريد بدء تشغيل البوت / التطبيق على عقدة التشغيل المخصصة؟'
+        : 'Are you sure you want to start this host process on the dedicated runtime node?',
+      stop: isRtl
+        ? 'سيتم إيقاف تشغيل عملية الاستضافة بشكل آمن.'
+        : 'Are you sure you want to safely stop this host process?',
+      restart: isRtl
+        ? 'سيتم إيقاف العملية وإعادة تشغيلها من جديد.'
+        : 'Are you sure you want to stop and restart this host process?',
+      kill: isRtl
+        ? 'تحذير: سيتم إنهاء العملية قسرياً وفورياً بإرسال إشارة SIGKILL.'
+        : 'Warning: Are you sure you want to forcibly terminate the process immediately with SIGKILL?',
+      reinstall: isRtl
+        ? 'سيتم إعادة بناء الحاوية وإعادة تثبيت التبعيات وبيئة التشغيل.'
+        : 'Are you sure you want to reinstall the runtime container and reset dependencies?',
+    };
+    const variants: Record<string, 'danger' | 'warning' | 'primary'> = {
+      start: 'primary',
+      stop: 'warning',
+      restart: 'primary',
+      kill: 'danger',
+      reinstall: 'warning',
+    };
+    requestConfirmation({
+      title: titles[action],
+      message: messages[action],
+      variant: variants[action],
+      action: () => executePowerAction(action),
+    });
+  }
+
+  async function executeDeleteHost() {
+    if (!hostId) return;
+    await apiFetch(`/api/hosts/${hostId}`, { method: 'DELETE' });
+    onHostDeleted();
+  }
+
+  function handleDeleteHost() {
+    requestConfirmation({
+      title: isRtl ? 'تأكيد حذف الاستضافة نهائياً' : 'Confirm Permanent Host Deletion',
+      message: isRtl
+        ? 'تحذير: هذه العملية نهائية ولا يمكن التراجع عنها. سيتم حذف الاستضافة وكافة مواردها المرتبطة بالكامل:'
+        : 'Warning: This action is permanent and cannot be undone. All associated host resources will be deleted:',
+      variant: 'danger',
+      confirmLabel: isRtl ? 'حذف الاستضافة نهائياً' : 'Permanently Delete Host',
+      bulletPoints: isRtl
+        ? [
+            'سجل الاستضافة (Host Instance)',
+            'تطبيق عقدة التشغيل المخصص (Clever Cloud Runtime Application)',
+            'كافة ملفات ومجلدات العمل (Files & Working Directory)',
+            'قواعد البيانات والمستخدمين المرتبطين (Databases & Database Users)',
+            'الجداول الزمنية والمهام المجدولة (Cron Schedules)',
+            'كافة النسخ الاحتياطية المحفوظة (Backups)',
+          ]
+        : [
+            'Host instance record',
+            'Dedicated Clever Cloud Runtime Application',
+            'All host files and workspace directory',
+            'All provisioned databases & database users',
+            'All registered cron schedules & automated tasks',
+            'All stored backup archives',
+          ],
+      action: () => executeDeleteHost(),
+    });
+  }
+
+  function handleDeleteFileOrFolder(item: { path: string; name: string; isDirectory: boolean }) {
+    const isDir = item.isDirectory;
+    requestConfirmation({
+      title: isDir
+        ? isRtl ? 'تأكيد حذف المجلد' : 'Confirm Delete Folder'
+        : isRtl ? 'تأكيد حذف الملف' : 'Confirm Delete File',
+      message: isDir
+        ? isRtl
+          ? `هل أنت متأكد من حذف المجلد "${item.name}" وكافة محتوياته نهائياً؟`
+          : `Are you sure you want to permanently delete the folder "${item.name}" and all its contents?`
+        : isRtl
+          ? `هل أنت متأكد من حذف الملف "${item.name}" نهائياً؟`
+          : `Are you sure you want to permanently delete the file "${item.name}"?`,
+      variant: 'danger',
+      action: async () => {
+        await apiFetch(`/api/hosts/${hostId}/files`, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'delete', path: item.path }),
+        });
+        setPanelNotice(isRtl ? `تم حذف "${item.name}".` : `Deleted "${item.name}".`);
+        void loadTabResource('files');
+      },
+    });
+  }
+
+  function handleDeleteDatabase(db: { id: string; name: string }) {
+    requestConfirmation({
+      title: isRtl ? 'تأكيد حذف قاعدة البيانات' : 'Confirm Delete Database',
+      message: isRtl
+        ? `هل أنت متأكد من حذف قاعدة البيانات "${db.name}"؟ سيتم حذف جميع الجداول والمستخدمين والبيانات بداخلها نهائياً.`
+        : `Are you sure you want to delete database "${db.name}"? All tables and data will be permanently removed.`,
+      variant: 'danger',
+      action: async () => {
+        await apiFetch(`/api/hosts/${hostId}/databases/${db.id}`, {
+          method: 'DELETE',
+        });
+        setPanelNotice(isRtl ? `تم حذف قاعدة البيانات "${db.name}".` : `Database "${db.name}" deleted.`);
+        void loadTabResource('databases');
+      },
+    });
+  }
+
+  function handleDeleteSchedule(sched: { id: string; name: string }) {
+    requestConfirmation({
+      title: isRtl ? 'تأكيد حذف الجدولة' : 'Confirm Delete Schedule',
+      message: isRtl
+        ? `هل أنت متأكد من حذف الجدولة الزمنية "${sched.name}"؟`
+        : `Are you sure you want to delete the schedule "${sched.name}"?`,
+      variant: 'danger',
+      action: async () => {
+        await apiFetch(`/api/hosts/${hostId}/schedules/${sched.id}`, {
+          method: 'DELETE',
+        });
+        setPanelNotice(isRtl ? `تم حذف الجدولة "${sched.name}".` : `Schedule "${sched.name}" deleted.`);
+        void loadTabResource('schedules');
+      },
+    });
+  }
+
+  function handleDeleteBackup(backup: { id: string; name: string }) {
+    requestConfirmation({
+      title: isRtl ? 'تأكيد حذف النسخة الاحتياطية' : 'Confirm Delete Backup',
+      message: isRtl
+        ? `هل أنت متأكد من حذف النسخة الاحتياطية "${backup.name}"؟`
+        : `Are you sure you want to delete backup "${backup.name}"?`,
+      variant: 'danger',
+      action: async () => {
+        await apiFetch(`/api/hosts/${hostId}/backups/${backup.id}`, {
+          method: 'DELETE',
+        });
+        setPanelNotice(isRtl ? `تم حذف النسخة الاحتياطية "${backup.name}".` : `Backup "${backup.name}" deleted.`);
+        void loadTabResource('backups');
+      },
+    });
   }
 
   async function handleSaveStartup(e: React.FormEvent) {
@@ -518,18 +723,6 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
       });
       setPanelNotice('Host settings updated.');
       void loadHostDetail();
-    } catch (err) {
-      if (err instanceof ClientApiError) {
-        setPanelError(`[${err.code}] ${err.message}`);
-      }
-    }
-  }
-
-  async function handleDeleteHost() {
-    if (!hostId) return;
-    try {
-      await apiFetch(`/api/hosts/${hostId}`, { method: 'DELETE' });
-      onHostDeleted();
     } catch (err) {
       if (err instanceof ClientApiError) {
         setPanelError(`[${err.code}] ${err.message}`);
@@ -889,6 +1082,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                       <th className="py-2.5 px-3">{t.fileColType}</th>
                       <th className="py-2.5 px-3 text-end">{t.fileColSize}</th>
                       <th className="py-2.5 px-3 text-end">{t.fileColModified}</th>
+                      <th className="py-2.5 px-3 text-end">{isRtl ? 'الإجراءات' : 'Actions'}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
@@ -903,6 +1097,16 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                         </td>
                         <td className="py-2.5 px-3 text-end font-mono text-slate-400">
                           {item.modifiedAt}
+                        </td>
+                        <td className="py-2.5 px-3 text-end">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFileOrFolder(item)}
+                            title={isRtl ? 'حذف' : 'Delete'}
+                            className="p-1.5 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1287,7 +1491,17 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                           {db.hostAddress}:{db.port}
                         </span>
                       </div>
-                      <span className="text-emerald-400 font-mono">{db.status}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-emerald-400 font-mono">{db.status}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDatabase(db)}
+                          title={isRtl ? 'حذف قاعدة البيانات' : 'Delete Database'}
+                          className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1363,9 +1577,19 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                         <span className="mx-2 text-slate-500">·</span>
                         <span className="text-slate-400">{s.taskType}</span>
                       </div>
-                      <span className="text-slate-400 font-mono">
-                        {s.lastStatus || t.schedStatusScheduled}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-400 font-mono">
+                          {s.lastStatus || t.schedStatusScheduled}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSchedule(s)}
+                          title={isRtl ? 'حذف الجدولة' : 'Delete Schedule'}
+                          className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1421,7 +1645,17 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                           {b.sizeBytes} Bytes
                         </span>
                       </div>
-                      <span className="text-emerald-400 font-mono">{b.status}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-emerald-400 font-mono">{b.status}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBackup(b)}
+                          title={isRtl ? 'حذف النسخة الاحتياطية' : 'Delete Backup'}
+                          className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1622,6 +1856,20 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
           )}
         </>
       )}
+
+      {/* Unified Reusable Confirmation Dialog System */}
+      <ConfirmDialog
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel={confirmModal.confirmLabel}
+        cancelLabel={confirmModal.cancelLabel}
+        variant={confirmModal.variant}
+        bulletPoints={confirmModal.bulletPoints}
+        loading={confirmActionLoading}
+        onConfirm={handleConfirmSubmit}
+        onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

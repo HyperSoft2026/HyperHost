@@ -11,6 +11,7 @@ import {
   config,
   getEnvironmentDiagnosticsSummary,
   getCleverCloudConfigValidation,
+  isAllowedCorsOrigin,
 } from './config';
 import { globalErrorHandler } from './errors';
 import { logger } from './logger';
@@ -22,6 +23,7 @@ import { registerUserRoutes } from './routes/users';
 import { registerHostRoutes } from './routes/hosts';
 import { registerAdminRoutes } from './routes/admin';
 import { registerRuntimeNodeRoutes } from './routes/runtime-nodes';
+import { registerSupportRoutes } from './routes/support';
 import { runtimeProvisionerService } from '../runtime/provisioner';
 
 async function bootstrapControlPlane() {
@@ -90,14 +92,29 @@ async function bootstrapControlPlane() {
     frameguard: false,
   });
 
-  // CORS configuration
+  // CORS configuration — strict allowlist with credentials
   await app.register(fastifyCors, {
-    origin:
-      config.corsOrigin === '*'
-        ? true
-        : config.corsOrigin.split(',').map((o) => o.trim()),
+    origin: (origin, cb) => {
+      // Direct same-origin requests or non-browser clients (no origin header) are allowed
+      if (!origin || isAllowedCorsOrigin(origin)) {
+        cb(null, true);
+      } else {
+        cb(new Error('CORS request from unauthorized origin rejected'), false);
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-CSRF-Token',
+      'X-HyperHost-Request',
+      'X-HyperHost-Locale',
+      'x-hyperhost-node-id',
+      'x-hyperhost-node-fqdn',
+      'x-hyperhost-node-location',
+      'x-hyperhost-node-ip',
+    ],
   });
 
   // Secure Cookies
@@ -142,6 +159,7 @@ async function bootstrapControlPlane() {
   await registerHostRoutes(app);
   await registerAdminRoutes(app);
   await registerRuntimeNodeRoutes(app);
+  await registerSupportRoutes(app);
 
   const distDir = path.resolve(process.cwd(), 'dist');
   const distIndexPath = path.join(distDir, 'index.html');

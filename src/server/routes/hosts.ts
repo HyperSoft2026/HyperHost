@@ -241,12 +241,12 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     const { resolveHostingPlanForHost } = await import('../plans');
     const planSnapshot = await resolveHostingPlanForHost(body.planCode || body.planId || 'FREE');
 
-    // Concurrency-safe atomic quota enforcement via transaction
+    // Concurrency-safe atomic quota enforcement via PostgreSQL transaction with row-level locking
     const createdHost = await prisma.$transaction(async (tx) => {
       try {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('host_quota_' || ${user.id}))`;
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${user.id} FOR UPDATE`;
       } catch {
-        // Safe fallback for environments where raw advisory locks are not supported
+        // Safe fallback for environments where raw row locks are not supported
       }
 
       const currentHostCount = await tx.host.count({

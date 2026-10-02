@@ -8,6 +8,8 @@ import {
 } from '../config';
 import {
   clearSessionCookie,
+  CSRF_COOKIE_NAME,
+  getCsrfCookieOptions,
   getSessionCookieOptions,
   recordActivityLog,
   resolveAuthContext,
@@ -489,6 +491,11 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       rawSessionToken,
       getSessionCookieOptions(request)
     );
+    reply.setCookie(
+      CSRF_COOKIE_NAME,
+      csrfToken,
+      getCsrfCookieOptions(request)
+    );
 
     buildCallbackSuccessHtml(reply, dmResult);
   };
@@ -499,7 +506,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.get('/auth/callback/', handleCallback);
 
   // Current authenticated session inspection (never triggers DM notification)
-  app.get('/api/auth/me', async (request) => {
+  app.get('/api/auth/me', async (request, reply) => {
     const dbHealth = await checkDatabaseHealth();
     if (!dbHealth.connected) {
       return {
@@ -527,6 +534,12 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         },
       };
     }
+
+    reply.setCookie(
+      CSRF_COOKIE_NAME,
+      ctx.session.csrfToken,
+      getCsrfCookieOptions(request)
+    );
 
     const prisma = getPrismaOrThrow();
     const [hostCount, latestLoginLog] = await Promise.all([

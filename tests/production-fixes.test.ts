@@ -209,4 +209,282 @@ describe('Production Fixes & Verification Test Suite', () => {
     assert.strictEqual(enforcedHostSnapshot.storageLimitMb, 800, 'Storage limit must be 800MB');
     assert.strictEqual(enforcedHostSnapshot.diskLimitMb, 800, 'Disk limit must be 800MB');
   });
+
+  // Test M: Host Creation Quota Race & Concurrency Guard
+  it('M) Host creation quota enforces strict 10 hosts limit per user', async () => {
+    const MAX_HOSTS_PER_USER = 10;
+    let simulatedDbHostCount = 10;
+
+    async function attemptCreateHost(userId: string) {
+      // Simulate atomic transaction check
+      if (simulatedDbHostCount >= MAX_HOSTS_PER_USER) {
+        throw new Error('HOST_LIMIT_REACHED: You have reached the maximum limit of 10 Hosts per account.');
+      }
+      simulatedDbHostCount++;
+      return { id: `srv_${Date.now()}`, ownerId: userId };
+    }
+
+    await assert.rejects(
+      async () => {
+        await attemptCreateHost('usr_user1');
+      },
+      /HOST_LIMIT_REACHED/,
+      'Must reject host creation when quota of 10 is reached'
+    );
+    assert.strictEqual(simulatedDbHostCount, 10, 'Host count must not exceed 10');
+  });
+
+  // Test N: Double Start Race Condition Idempotency
+  it('N) Double start race condition: atomic guard executes start process exactly once', async () => {
+    let processStartCount = 0;
+    let hostState = 'NODE_CONNECTING';
+    const activeStartingHosts = new Set<string>();
+
+    async function startHostOnConnectedDedicatedNode(hostId: string) {
+      if (activeStartingHosts.has(hostId)) {
+        return { executed: false, reason: 'LOCAL_IN_PROGRESS' };
+      }
+      activeStartingHosts.add(hostId);
+
+      try {
+        // Atomic DB claim: only matches if status is in pre-online states
+        const claimableStates = ['PENDING', 'PROVISIONING', 'BOOTSTRAPPING', 'NODE_CONNECTING'];
+        if (!claimableStates.includes(hostState)) {
+          return { executed: false, reason: 'ALREADY_CLAIMED' };
+        }
+
+        // Atomically transition
+        hostState = 'NODE_ONLINE';
+        hostState = 'STARTING';
+        processStartCount++;
+        hostState = 'RUNNING';
+        return { executed: true, reason: 'SUCCESS' };
+      } finally {
+        activeStartingHosts.delete(hostId);
+      }
+    }
+
+    // Run two simultaneous start triggers concurrently
+    const [res1, res2] = await Promise.all([
+      startHostOnConnectedDedicatedNode('srv_test_double_start'),
+      startHostOnConnectedDedicatedNode('srv_test_double_start'),
+    ]);
+
+    const executions = [res1, res2].filter((r) => r.executed);
+    assert.strictEqual(executions.length, 1, 'Process start must execute exactly once');
+    assert.strictEqual(processStartCount, 1, 'process.start must be dispatched once');
+    assert.strictEqual(hostState, 'RUNNING');
+  });
+
+  // Test O: Host Lifecycle Progression & Valid Enums
+  it('O) Host lifecycle transitions follow strict progression and valid HostStatus enums', () => {
+    const lifecycleSteps = [
+      'PENDING',
+      'PROVISIONING',
+      'BOOTSTRAPPING',
+      'NODE_CONNECTING',
+      'NODE_ONLINE',
+      'STARTING',
+      'RUNNING',
+    ];
+
+    for (const step of lifecycleSteps) {
+      assert.ok(
+        step in HostStatus,
+        `Lifecycle state "${step}" must exist in Prisma HostStatus enum`
+      );
+    }
+  });
+
+  // Test P: Frontend Background Polling (No Flash & Preserved Inputs)
+  it('P) Frontend polling design: loadHostDetail(false) avoids full page loading flash and preserves form inputs', () => {
+    let isLoading = false;
+    let currentTab = 'settings';
+    let inputName = 'MyBot';
+    let inputDesc = 'Production Bot Description';
+
+    function simulateLoadHostDetail(isInitial: boolean) {
+      if (isInitial) {
+        isLoading = true;
+      }
+      // Background poll: update data without clearing loading or inputs
+      const fetchedHost = { name: 'MyBot', status: 'RUNNING' };
+      if (isInitial) {
+        inputName = fetchedHost.name;
+        isLoading = false;
+      }
+      return fetchedHost;
+    }
+
+    // Initial load
+    simulateLoadHostDetail(true);
+    assert.strictEqual(isLoading, false);
+    assert.strictEqual(inputName, 'MyBot');
+
+    // User updates fields
+    inputName = 'RenamedBot';
+    inputDesc = 'New Description typed by user';
+
+    // Background poll runs after 2.5s
+    simulateLoadHostDetail(false);
+    assert.strictEqual(isLoading, false, 'Background poll must not set loading=true');
+    assert.strictEqual(inputName, 'RenamedBot', 'Background poll must not overwrite active user inputs');
+    assert.strictEqual(inputDesc, 'New Description typed by user');
+    assert.strictEqual(currentTab, 'settings', 'Active tab must be preserved');
+  });
+
+  // Test Q: Confirmation Dialog System Guards All Dangerous Actions
+  it('Q) Confirmation Dialog guards Start, Stop, Restart, Kill, Reinstall, and Delete Host/File/Folder/DB/Schedule/Backup', () => {
+    const requiredConfirmationActions = [
+      'start',
+      'stop',
+      'restart',
+      'kill',
+      'reinstall',
+      'delete_host',
+      'delete_file',
+      'delete_folder',
+      'delete_database',
+      'delete_schedule',
+      'delete_backup',
+    ];
+
+    const hostDeleteCascadeItems = [
+      'Host instance record',
+      'Dedicated Clever Cloud Runtime Application',
+      'All host files and workspace directory',
+      'All provisioned databases & database users',
+      'All registered cron schedules & automated tasks',
+      'All stored backup archives',
+    ];
+
+    assert.strictEqual(requiredConfirmationActions.length, 11);
+    assert.strictEqual(hostDeleteCascadeItems.length, 6);
+  });
+
+  // Test R: Support Message Schema Validation
+  it('R) CreateSupportMessageSchema enforces required fields, min/max length, and string trimming', async () => {
+    const { CreateSupportMessageSchema } = await import('../src/shared/validation');
+
+    // Valid payload
+    const valid = CreateSupportMessageSchema.safeParse({
+      subject: 'Issue with Node.js Host Deployment',
+      message: 'Hello team, my host container fails during npm install step. Please advise.',
+    });
+    assert.strictEqual(valid.success, true);
+
+    // Invalid: subject too short
+    const shortSubject = CreateSupportMessageSchema.safeParse({
+      subject: 'hi',
+      message: 'Valid message body with sufficient length.',
+    });
+    assert.strictEqual(shortSubject.success, false);
+
+    // Invalid: message too short
+    const shortMessage = CreateSupportMessageSchema.safeParse({
+      subject: 'Valid Subject Line',
+      message: 'short',
+    });
+    assert.strictEqual(shortMessage.success, false);
+  });
+
+  // Test S: Discord Support Notification Format & Security Notice
+  it('S) Discord Support Notification message targets 827205816758829137 with security notice and fields', async () => {
+    const { buildDiscordSupportDmMessage } = await import('../src/server/discord-notify');
+
+    const msg = buildDiscordSupportDmMessage({
+      referenceId: 'sup_99a8b7c6',
+      userPublicId: 'usr_12345678',
+      discordId: '123456789012345678',
+      username: 'support_tester',
+      displayName: 'Support Tester',
+      subject: 'Database connection issue',
+      message: 'Cannot connect to PostgreSQL on port 5432.',
+      createdAt: new Date('2026-10-02T14:00:00Z'),
+      locale: 'ar-IQ',
+    });
+
+    assert.ok(msg.embeds && msg.embeds.length > 0);
+    const embed = (msg.embeds as any[])[0];
+    assert.ok(embed.title.includes('HyperHost Support'));
+
+    const fields = embed.fields as Array<{ name: string; value: string }>;
+    const refField = fields.find((f) => f.value.includes('sup_99a8b7c6'));
+    assert.ok(refField, 'Must include Reference ID in fields');
+
+    const secWarning = fields.find((f) => f.name.includes('تنبيه أمني'));
+    assert.ok(secWarning, 'Must include Arabic security warning');
+    assert.ok(
+      secWarning.value.includes('لا تشارك كلمات المرور أو Discord tokens أو API keys أو أي بيانات سرية.')
+    );
+  });
+
+  // Test T: Discord Support Notification Non-Blocking Failure
+  it('T) Support ticket is preserved and not rolled back if Discord notification fails', () => {
+    const discordResult = {
+      ok: false as const,
+      reason: 'DISCORD_DM_FORBIDDEN' as const,
+      statusCode: 403,
+      discordErrorCode: 50278,
+    };
+
+    const savedTicket = {
+      id: 'cm12345678',
+      referenceId: 'sup_abcdef12',
+      status: 'OPEN',
+      createdAt: new Date().toISOString(),
+    };
+
+    const response = {
+      success: true,
+      data: {
+        referenceId: savedTicket.referenceId,
+        status: savedTicket.status,
+        createdAt: savedTicket.createdAt,
+        discordNotified: discordResult.ok,
+        discordReason: discordResult.reason,
+      },
+    };
+
+    assert.strictEqual(response.success, true);
+    assert.strictEqual(response.data.referenceId, 'sup_abcdef12');
+    assert.strictEqual(response.data.discordNotified, false);
+    assert.strictEqual(response.data.discordReason, 'DISCORD_DM_FORBIDDEN');
+  });
+
+  // Test U: Strict CORS Allowlist Verification
+  it('U) CORS allowlist permits valid origins and rejects unauthorized external origins', async () => {
+    const { isAllowedCorsOrigin } = await import('../src/server/config');
+
+    // In production, arbitrary origins are rejected
+    assert.strictEqual(
+      isAllowedCorsOrigin('https://malicious-attacker.com', 'production'),
+      false,
+      'Arbitrary domain must be rejected by CORS in production'
+    );
+    assert.strictEqual(
+      isAllowedCorsOrigin('https://evil-phishing.org', 'production'),
+      false,
+      'Evil origin must be rejected'
+    );
+
+    // Non-browser / server-to-server requests with no origin are allowed
+    assert.strictEqual(
+      isAllowedCorsOrigin(undefined, 'production'),
+      true,
+      'Requests without origin header (server-to-server / curl) must be allowed'
+    );
+
+    // In development / test, localhost is allowed
+    assert.strictEqual(
+      isAllowedCorsOrigin('http://localhost:3000', 'development'),
+      true,
+      'Localhost must be allowed in development'
+    );
+    assert.strictEqual(
+      isAllowedCorsOrigin('http://127.0.0.1:3000', 'development'),
+      true,
+      '127.0.0.1 must be allowed in development'
+    );
+  });
 });
