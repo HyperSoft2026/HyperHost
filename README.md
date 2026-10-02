@@ -163,7 +163,9 @@ HyperHost is engineered for zero-friction deployment on **Clever Cloud** (Node.j
 
 1. Create a **Node.js** application and link a **PostgreSQL** add-on on Clever Cloud (`DATABASE_URL` is injected automatically).
 2. Configure environment variables (`SESSION_SECRET`, `ENCRYPTION_KEY`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_REDIRECT_URI`, `APP_URL`).
-3. Clever Cloud automatically runs `npm install` and `npm run build`, then starts the application via `npm start`.
+3. Clever Cloud automatically executes the following deployment sequence:
+   - `npm install` (automatically triggers `postinstall` → `prisma generate`)
+   - `npm start` (automatically triggers `prestart` → `npm run db:deploy` → `prisma migrate deploy` before starting `tsx src/server/index.ts --production`). If database migrations fail, `prestart` exits with a non-zero status code and prevents a broken application from starting.
 4. The Fastify server dynamically listens on `process.env.PORT` and binds to `0.0.0.0`.
 5. Health checks are exposed at `/health` and `/api/health`.
 
