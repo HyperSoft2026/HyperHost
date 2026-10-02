@@ -98,6 +98,10 @@ const dictionary = {
     discordHostCreatedDmFailedMsg:
       'تم إنشاء الاستضافة بنجاح، لكن تعذر إرسال إشعار Discord.',
     joinHyperSoftDiscordBtn: 'انضم إلى سيرفر HyperSoft لتفعيل الإشعارات',
+    retryNotificationBtn: 'إعادة محاولة إرسال الإشعار',
+    retryingNotification: 'جارٍ المحاولة...',
+    notificationRetriedSuccess: 'تم إرسال الإشعار إلى Discord بنجاح!',
+    notificationRetriedFailed: 'تعذر إرسال الإشعار. تأكد من تفعيل الرسائل الخاصة أو الانضمام إلى سيرفر HyperSoft.',
     dismiss: 'إغلاق',
     totalHosts: 'الاستضافات الحالية',
     onlineHosts: 'الاستضافات المتصلة',
@@ -432,6 +436,10 @@ const dictionary = {
     discordHostCreatedDmFailedMsg:
       'Host created successfully, but the Discord notification could not be delivered.',
     joinHyperSoftDiscordBtn: 'Join HyperSoft Discord to enable DMs',
+    retryNotificationBtn: 'Retry Notification',
+    retryingNotification: 'Retrying...',
+    notificationRetriedSuccess: 'Discord notification delivered successfully!',
+    notificationRetriedFailed: 'Could not deliver notification. Please enable DMs or join our Discord server.',
     dismiss: 'Dismiss',
     totalHosts: 'Current Hosts',
     onlineHosts: 'Online Hosts',

@@ -608,4 +608,70 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       data: { signedOut: true },
     };
   });
+
+  // Manual Retry for Discord Login DM (rate-limited, non-blocking, safe)
+  app.post('/api/notifications/retry-login-dm', async (request) => {
+    const ctx = await resolveAuthContext(request);
+    if (!ctx) {
+      throw new AppError(
+        'AUTHENTICATION_REQUIRED',
+        'You must be signed in to retry notifications.',
+        401
+      );
+    }
+
+    const { canRetryNotification, recordRetryAttempt } = await import('../discord-notify');
+    const retryKey = `user_login:${ctx.user.id}`;
+    const check = canRetryNotification(retryKey);
+    if (!check.allowed) {
+      throw new AppError(
+        'RETRY_RATE_LIMITED',
+        `Please wait ${check.waitSeconds}s before retrying notification.`,
+        429
+      );
+    }
+    recordRetryAttempt(retryKey);
+
+    const userPublicId = formatEntityPublicId('usr', ctx.user.id, ctx.user.publicId);
+    const ipAddress =
+      (request.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      request.ip ||
+      null;
+
+    const dmResult = await sendDiscordLoginNotification(
+      {
+        callbackKey: `retry_${ctx.user.id}_${Date.now()}`,
+        discordId: ctx.user.discordId,
+        username: ctx.user.username,
+        displayName: ctx.user.displayName,
+        userPublicId,
+        ipAddress,
+        locale: resolveRequestedLocale(request),
+        timestamp: new Date(),
+      },
+      true
+    );
+
+    await recordActivityLog({
+      userId: ctx.user.id,
+      action: 'Retried Discord Login DM Notification',
+      metadata: {
+        sent: dmResult.ok,
+        reason: dmResult.ok ? null : dmResult.reason,
+        statusCode: dmResult.ok ? 200 : (dmResult as any).statusCode ?? null,
+        discordErrorCode: dmResult.ok ? null : (dmResult as any).discordErrorCode ?? null,
+      },
+      request,
+    });
+
+    return {
+      success: true,
+      data: {
+        sent: dmResult.ok,
+        reason: dmResult.ok ? null : dmResult.reason,
+        statusCode: dmResult.ok ? 200 : (dmResult as any).statusCode ?? null,
+        discordErrorCode: dmResult.ok ? null : (dmResult as any).discordErrorCode ?? null,
+      },
+    };
+  });
 }

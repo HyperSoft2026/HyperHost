@@ -1053,11 +1053,9 @@ export const logger = {
           : undefined;
         const depState = String(latestDeployment?.state || '').toUpperCase();
 
-        if (
-          depState === 'FAIL' ||
-          depState === 'FAILED' ||
-          depState === 'CANCELLED'
-        ) {
+        // Only fatal if explicitly FAILED. CANCELLED often occurs when Git push triggers
+        // an initial build that is immediately superceded or restarted by instances start.
+        if (depState === 'FAIL' || depState === 'FAILED') {
           throw new AppError(
             'BOOTSTRAP_FAILED',
             `Clever Cloud deployment for application ${serverId} failed with state ${depState}.`,

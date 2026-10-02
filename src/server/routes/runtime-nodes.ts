@@ -360,6 +360,23 @@ export async function registerRuntimeNodeRoutes(
             };
 
             if (parsed.type === 'hello') {
+              if (agent.handshakeCompleted) {
+                logger.info('Received duplicate hello handshake frame, responding with idempotent ack', {
+                  nodeId: node.id,
+                });
+                if (socket.readyState === 1) {
+                  socket.send(
+                    JSON.stringify({
+                      type: 'handshake_ack',
+                      nodeId: node.id,
+                      status: 'ONLINE',
+                      timestamp: new Date().toISOString(),
+                    })
+                  );
+                }
+                return;
+              }
+
               agent.completeHandshake(
                 {
                   version: parsed.version || '1.0.0',
@@ -421,12 +438,8 @@ export async function registerRuntimeNodeRoutes(
                   });
                 }
 
-                if (
-                  ['PENDING', 'PROVISIONING', 'BOOTSTRAPPING', 'NODE_CONNECTING'].includes(
-                    dedicatedHost.status
-                  )
-                ) {
-                  // Trigger NODE_ONLINE -> STARTING -> RUNNING for newly provisioned Host
+                // If host is not explicitly SUSPENDED or user-STOPPED, ensure it runs on this live Node
+                if (dedicatedHost.status !== 'SUSPENDED' && dedicatedHost.status !== 'STOPPED') {
                   void runtimeProvisionerService.startHostOnConnectedDedicatedNode(
                     dedicatedHost.id,
                     node.id

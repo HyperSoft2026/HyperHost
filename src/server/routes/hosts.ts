@@ -1932,4 +1932,72 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       },
     };
   });
+
+  // Manual Retry for Host Created Discord DM (rate-limited, non-blocking, safe)
+  app.post('/api/hosts/:id/retry-notification', async (request) => {
+    const { id } = request.params as { id: string };
+    const { auth, host } = await requireHostPermission(request, id, 'activity.read');
+    const { canRetryNotification, recordRetryAttempt, sendDiscordHostCreatedNotification } =
+      await import('../discord-notify');
+
+    const retryKey = `host_notify:${host.id}`;
+    const check = canRetryNotification(retryKey);
+    if (!check.allowed) {
+      throw new AppError(
+        'RETRY_RATE_LIMITED',
+        `Please wait ${check.waitSeconds}s before retrying host notification.`,
+        429
+      );
+    }
+    recordRetryAttempt(retryKey);
+
+    const serverPublicId = formatEntityPublicId('srv', host.id, host.publicId);
+    const userPublicId = formatEntityPublicId('usr', auth.user.id, auth.user.publicId);
+    const requestLocale = resolveRequestLocale(request);
+
+    const dmResult = await sendDiscordHostCreatedNotification(
+      {
+        discordId: auth.user.discordId,
+        username: auth.user.username,
+        displayName: auth.user.displayName,
+        userPublicId,
+        hostId: host.id,
+        serverId: serverPublicId,
+        hostName: host.name,
+        hostType: host.type,
+        runtime: host.runtime,
+        runtimeVersion: host.runtimeVersion,
+        memoryLimitMb: host.memoryLimitMb,
+        diskLimitMb: host.diskLimitMb,
+        cpuLimitPercent: host.cpuLimitPercent,
+        status: host.status,
+        createdAt: host.createdAt,
+        locale: requestLocale,
+      },
+      true
+    );
+
+    await recordActivityLog({
+      userId: auth.user.id,
+      hostId: host.id,
+      action: 'Retried Discord Host Created DM Notification',
+      metadata: {
+        sent: dmResult.ok,
+        reason: dmResult.ok ? null : dmResult.reason,
+        statusCode: dmResult.ok ? 200 : (dmResult as any).statusCode ?? null,
+        discordErrorCode: dmResult.ok ? null : (dmResult as any).discordErrorCode ?? null,
+      },
+      request,
+    });
+
+    return {
+      success: true,
+      data: {
+        sent: dmResult.ok,
+        reason: dmResult.ok ? null : dmResult.reason,
+        statusCode: dmResult.ok ? 200 : (dmResult as any).statusCode ?? null,
+        discordErrorCode: dmResult.ok ? null : (dmResult as any).discordErrorCode ?? null,
+      },
+    };
+  });
 }

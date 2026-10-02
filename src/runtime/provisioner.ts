@@ -227,9 +227,41 @@ export class NodeProvisionerService {
       });
 
       // 6. Wait for real Clever Cloud deployment & application readiness
-      const readyServer = await this.provisioner.waitUntilReady(
-        createdServer.serverId
-      );
+      let readyServer: import('./interfaces').ProvisionedServer;
+      try {
+        readyServer = await this.provisioner.waitUntilReady(
+          createdServer.serverId
+        );
+      } catch (pollErr) {
+        // If the Node Agent WebSocket is already connected or connects shortly,
+        // the application is actually up and running despite any deployment poll warning.
+        if (runtimeRegistry.isNodeConnected(dedicatedNode.id)) {
+          logger.info('Node Agent WebSocket connected during deployment polling', {
+            hostId: host.id,
+            nodeId: dedicatedNode.id,
+          });
+          readyServer = createdServer;
+        } else {
+          logger.warn('Deployment poll encountered warning, awaiting direct Node WebSocket handshake grace period...', {
+            hostId: host.id,
+            nodeId: dedicatedNode.id,
+            error: pollErr instanceof Error ? pollErr.message : String(pollErr),
+          });
+          const connectedDuringGrace = await this.waitForNodeWebSocketConnection(
+            dedicatedNode.id,
+            20_000
+          );
+          if (connectedDuringGrace) {
+            logger.info('Node Agent connected during grace window', {
+              hostId: host.id,
+              nodeId: dedicatedNode.id,
+            });
+            readyServer = createdServer;
+          } else {
+            throw pollErr;
+          }
+        }
+      }
 
       const bootstrappedAt = new Date();
 
@@ -288,13 +320,32 @@ export class NodeProvisionerService {
         reason: safeReason,
       });
 
+      // Avoid overwriting Host status if Node Agent already completed WebSocket handshake and is active
+      const existingHost = await prisma.host.findUnique({
+        where: { id: hostId },
+        select: { status: true },
+      });
+
+      if (
+        existingHost?.status === 'RUNNING' ||
+        existingHost?.status === 'ONLINE' ||
+        existingHost?.status === 'NODE_ONLINE'
+      ) {
+        logger.info('Preserved active Host status despite deployment poll warning', {
+          hostId,
+          status: existingHost.status,
+        });
+        return;
+      }
+
+      // Strictly write valid HostStatus enum ('ERROR') to status, and failureCode to provisioningStatus (String column)
       await prisma.host
         .update({
           where: { id: hostId },
           data: {
-            status: failureCode,
+            status: 'ERROR',
             provisioningStatus: failureCode,
-            serverStatus: failureCode,
+            serverStatus: 'ERROR',
             provisioningError: safeReason,
           },
         })
@@ -307,7 +358,7 @@ export class NodeProvisionerService {
             data: {
               status: 'OFFLINE',
               isOnline: false,
-              serverStatus: failureCode,
+              serverStatus: 'ERROR',
               bootstrapTokenEncrypted: null,
             },
           })

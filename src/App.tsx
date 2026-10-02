@@ -61,6 +61,9 @@ export default function App() {
     sent: boolean;
     reason: string | null;
   }>({ visible: false, sent: false, reason: null });
+  const [lastCreatedHostId, setLastCreatedHostId] = useState<string | null>(null);
+  const [retryingLoginDm, setRetryingLoginDm] = useState<boolean>(false);
+  const [retryingHostDm, setRetryingHostDm] = useState<boolean>(false);
 
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
@@ -267,6 +270,52 @@ export default function App() {
     void navigator.clipboard?.writeText(val);
     setCopiedId(val);
     setTimeout(() => setCopiedId(null), 1600);
+  }
+
+  async function handleRetryLoginDm() {
+    if (retryingLoginDm) return;
+    setRetryingLoginDm(true);
+    try {
+      const res = await apiFetch<{ sent: boolean; reason: string | null }>(
+        '/api/notifications/retry-login-dm',
+        { method: 'POST' }
+      );
+      if (res.sent) {
+        setLoginDmState({ sent: true, reason: null });
+      } else {
+        setLoginDmState({ sent: false, reason: res.reason || 'DISCORD_DM_FORBIDDEN' });
+      }
+    } catch (err: any) {
+      setLoginDmState((prev) => ({
+        ...prev,
+        reason: err?.message || prev.reason || 'DISCORD_API_ERROR',
+      }));
+    } finally {
+      setRetryingLoginDm(false);
+    }
+  }
+
+  async function handleRetryHostDm() {
+    if (retryingHostDm || !lastCreatedHostId) return;
+    setRetryingHostDm(true);
+    try {
+      const res = await apiFetch<{ sent: boolean; reason: string | null }>(
+        `/api/hosts/${encodeURIComponent(lastCreatedHostId)}/retry-notification`,
+        { method: 'POST' }
+      );
+      if (res.sent) {
+        setHostCreatedDmBanner((prev) => ({ ...prev, sent: true, reason: null }));
+      } else {
+        setHostCreatedDmBanner((prev) => ({ ...prev, sent: false, reason: res.reason || 'DISCORD_DM_FORBIDDEN' }));
+      }
+    } catch (err: any) {
+      setHostCreatedDmBanner((prev) => ({
+        ...prev,
+        reason: err?.message || prev.reason || 'DISCORD_API_ERROR',
+      }));
+    } finally {
+      setRetryingHostDm(false);
+    }
   }
 
   if (initializing) {
@@ -695,6 +744,14 @@ export default function App() {
                           {t.joinHyperSoftDiscordBtn}
                         </a>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => void handleRetryLoginDm()}
+                        disabled={retryingLoginDm}
+                        className="text-[11px] font-semibold text-amber-300 hover:text-amber-200 underline disabled:opacity-50 cursor-pointer"
+                      >
+                        {retryingLoginDm ? t.retryingNotification : t.retryNotificationBtn}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -748,6 +805,16 @@ export default function App() {
                         >
                           {t.joinHyperSoftDiscordBtn}
                         </a>
+                      )}
+                      {lastCreatedHostId && (
+                        <button
+                          type="button"
+                          onClick={() => void handleRetryHostDm()}
+                          disabled={retryingHostDm}
+                          className="text-[11px] font-semibold text-amber-300 hover:text-amber-200 underline disabled:opacity-50 cursor-pointer"
+                        >
+                          {retryingHostDm ? t.retryingNotification : t.retryNotificationBtn}
+                        </button>
                       )}
                     </div>
                   )}
@@ -1078,6 +1145,7 @@ export default function App() {
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         onCreated={(newHostId, notification) => {
+          setLastCreatedHostId(newHostId);
           if (notification) {
             setHostCreatedDmBanner({
               visible: true,

@@ -132,6 +132,27 @@ function mapDiscordStatusToFailureReason(status: number): DiscordDmFailureReason
   return 'DISCORD_API_ERROR';
 }
 
+// Per-user/host retry cooldown map (minimum 15s between manual retries to prevent spam)
+const retryCooldowns = new Map<string, number>();
+const RETRY_COOLDOWN_MS = 15_000;
+
+export function canRetryNotification(key: string): { allowed: boolean; waitSeconds?: number } {
+  const lastTime = retryCooldowns.get(key);
+  if (!lastTime) return { allowed: true };
+  const elapsed = Date.now() - lastTime;
+  if (elapsed < RETRY_COOLDOWN_MS) {
+    return {
+      allowed: false,
+      waitSeconds: Math.ceil((RETRY_COOLDOWN_MS - elapsed) / 1000),
+    };
+  }
+  return { allowed: true };
+}
+
+export function recordRetryAttempt(key: string): void {
+  retryCooldowns.set(key, Date.now());
+}
+
 export function buildDiscordLoginDmMessage(params: {
   callbackKey?: string;
   username: string;
@@ -429,21 +450,24 @@ async function deliverDiscordDirectMessage(
         message?: string;
       } | null;
       const reason = mapDiscordStatusToFailureReason(dmChannelRes.status);
-      logger.warn('Discord DM notification failed', {
+      const isForbidden = dmChannelRes.status === 403;
+      
+      logger.warn('Discord DM notification delivery failed at DM channel open', {
         context: contextLabel,
         step: 'open_dm_channel',
         status: dmChannelRes.status,
         reason,
-        discordErrorCode: errBody?.code ?? null,
+        discordErrorCode: errBody?.code ?? (isForbidden ? 50278 : null),
+        discordErrorMessage: errBody?.message ?? (isForbidden ? 'Cannot send messages to this user' : null),
+        isForbidden,
         userId: safeUserId,
       });
+
       return {
         ok: false,
         reason,
         statusCode: dmChannelRes.status,
-        ...(typeof errBody?.code === 'number'
-          ? { discordErrorCode: errBody.code }
-          : {}),
+        discordErrorCode: typeof errBody?.code === 'number' ? errBody.code : (isForbidden ? 50278 : undefined),
       };
     }
 
@@ -499,21 +523,22 @@ async function deliverDiscordDirectMessage(
         message?: string;
       } | null;
       const reason = mapDiscordStatusToFailureReason(sendRes.status);
-      logger.warn('Discord DM notification failed', {
+      const isForbidden = sendRes.status === 403;
+      logger.warn('Discord DM notification delivery failed at message send', {
         context: contextLabel,
         step: 'send_dm_message',
         status: sendRes.status,
         reason,
-        discordErrorCode: errBody?.code ?? null,
+        discordErrorCode: errBody?.code ?? (isForbidden ? 50278 : null),
+        discordErrorMessage: errBody?.message ?? null,
+        isForbidden,
         userId: safeUserId,
       });
       return {
         ok: false,
         reason,
         statusCode: sendRes.status,
-        ...(typeof errBody?.code === 'number'
-          ? { discordErrorCode: errBody.code }
-          : {}),
+        discordErrorCode: typeof errBody?.code === 'number' ? errBody.code : (isForbidden ? 50278 : undefined),
       };
     }
 
@@ -566,7 +591,8 @@ async function deliverDiscordDirectMessage(
 }
 
 export async function sendDiscordLoginNotification(
-  payload: DiscordLoginDmPayload
+  payload: DiscordLoginDmPayload,
+  isRetry = false
 ): Promise<DiscordDmDeliveryResult> {
   const safeUserId = payload.userPublicId || `discord:${payload.discordId}`;
 
@@ -582,7 +608,7 @@ export async function sendDiscordLoginNotification(
     };
   }
 
-  if (!markNotificationProcessed(`login:${payload.callbackKey}`)) {
+  if (!isRetry && !markNotificationProcessed(`login:${payload.callbackKey}`)) {
     logger.info('Skipped duplicate Discord login DM for already-processed callback', {
       userId: safeUserId,
     });
@@ -613,7 +639,8 @@ export async function sendDiscordLoginNotification(
 }
 
 export async function sendDiscordHostCreatedNotification(
-  payload: DiscordHostCreatedDmPayload
+  payload: DiscordHostCreatedDmPayload,
+  isRetry = false
 ): Promise<DiscordDmDeliveryResult> {
   const safeUserId = payload.userPublicId || `discord:${payload.discordId}`;
 
@@ -629,7 +656,7 @@ export async function sendDiscordHostCreatedNotification(
     };
   }
 
-  if (!markNotificationProcessed(`host_create:${payload.serverId}`)) {
+  if (!isRetry && !markNotificationProcessed(`host_create:${payload.serverId}`)) {
     return {
       ok: false,
       reason: 'DUPLICATE_NOTIFICATION_SKIPPED',
