@@ -7,6 +7,7 @@ import {
   type HostTypeCode,
 } from '../shared/types';
 import { apiFetch, ClientApiError } from './api';
+import { useI18n } from './i18n';
 
 interface CreateHostModalProps {
   isOpen: boolean;
@@ -28,6 +29,7 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
   currentHostCount,
   availableNodes,
 }) => {
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<HostTypeCode>('DISCORD_BOT');
@@ -88,9 +90,13 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
       <div className="bg-[#11131F] border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-6">
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div>
-            <h2 className="text-lg font-bold text-white">Create New Host</h2>
+            <h2 className="text-lg font-bold text-white">{t.createNewHostTitle}</h2>
             <p className="text-xs text-slate-400">
-              Quota usage: <span className="font-mono tabular-nums text-indigo-300">{currentHostCount} / {MAX_HOSTS_PER_USER}</span> Hosts
+              {t.quotaUsage}:{' '}
+              <span className="font-mono tabular-nums text-indigo-300" dir="ltr">
+                {currentHostCount} / {MAX_HOSTS_PER_USER}
+              </span>{' '}
+              {t.hostsWord}
             </p>
           </div>
           <button
@@ -105,13 +111,13 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
         {error && (
           <div className="p-3.5 rounded-lg bg-red-950/40 border border-red-800/60 text-xs text-red-200 flex items-start gap-2">
             <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-            <span>{error}</span>
+            <span dir="ltr">{error}</span>
           </div>
         )}
 
         {availableNodes.filter((n) => n.liveConnected).length === 0 && (
           <div className="p-3.5 rounded-lg bg-amber-950/30 border border-amber-800/50 text-xs text-amber-200">
-            No live Runtime Nodes are currently connected. Your Host will be created in <span className="font-mono font-semibold">PENDING</span> state until a Runtime Node is attached.
+            {t.noLiveNodesNotice}
           </div>
         )}
 
@@ -119,7 +125,7 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Host Name
+                {t.hostNameLabel}
               </label>
               <input
                 type="text"
@@ -128,14 +134,14 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
                 maxLength={64}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Aegis Discord Bot"
+                placeholder={t.hostNamePlaceholder}
                 className="w-full px-3.5 py-2 text-sm bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Application Type
+                {t.appTypeLabel}
               </label>
               <select
                 value={type}
@@ -155,7 +161,7 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Runtime Environment
+                {t.runtimeEnvLabel}
               </label>
               <select
                 value={runtime}
@@ -177,11 +183,12 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Runtime Version
+                {t.runtimeVersionLabel}
               </label>
               <select
                 value={runtimeVersion}
                 onChange={(e) => setRuntimeVersion(e.target.value)}
+                dir="ltr"
                 className="w-full px-3.5 py-2 text-sm font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
               >
                 {selectedRuntimeSpec.availableVersions.map((ver) => (
@@ -194,28 +201,28 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
 
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Description (Optional)
+                {t.descriptionOptionalLabel}
               </label>
               <input
                 type="text"
                 maxLength={280}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Brief summary of bot purpose or cluster role"
+                placeholder={t.descriptionPlaceholder}
                 className="w-full px-3.5 py-2 text-sm bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
 
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Target Runtime Node
+                {t.targetNodeLabel}
               </label>
               <select
                 value={nodeId}
                 onChange={(e) => setNodeId(e.target.value)}
                 className="w-full px-3.5 py-2 text-sm bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
               >
-                <option value="">Unassigned — Queue as PENDING until Node is bound</option>
+                <option value="">{t.unassignedNodeOption}</option>
                 {availableNodes.map((n) => (
                   <option key={n.id} value={n.id}>
                     {n.name} ({n.location}) — {n.liveConnected ? 'ONLINE' : 'OFFLINE'}
@@ -226,7 +233,7 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                CPU Limit (%)
+                {t.cpuLimitPercentLabel}
               </label>
               <input
                 type="number"
@@ -235,13 +242,14 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
                 step={25}
                 value={cpuLimitPercent}
                 onChange={(e) => setCpuLimitPercent(Number(e.target.value))}
+                dir="ltr"
                 className="w-full px-3.5 py-2 text-sm font-mono tabular-nums bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Memory Limit (MB)
+                {t.memoryLimitMbLabel}
               </label>
               <input
                 type="number"
@@ -250,13 +258,14 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
                 step={128}
                 value={memoryLimitMb}
                 onChange={(e) => setMemoryLimitMb(Number(e.target.value))}
+                dir="ltr"
                 className="w-full px-3.5 py-2 text-sm font-mono tabular-nums bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
 
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                NVMe Disk Limit (MB)
+                {t.diskLimitMbLabel}
               </label>
               <input
                 type="number"
@@ -265,6 +274,7 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
                 step={512}
                 value={diskLimitMb}
                 onChange={(e) => setDiskLimitMb(Number(e.target.value))}
+                dir="ltr"
                 className="w-full px-3.5 py-2 text-sm font-mono tabular-nums bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
@@ -276,14 +286,14 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 text-xs font-medium text-slate-300 bg-slate-900 border border-slate-800 rounded-lg hover:bg-slate-800 cursor-pointer"
             >
-              Cancel
+              {t.cancel}
             </button>
             <button
               type="submit"
               disabled={submitting || currentHostCount >= MAX_HOSTS_PER_USER}
               className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg cursor-pointer"
             >
-              {submitting ? 'Creating Host...' : 'Create Host'}
+              {submitting ? t.creatingHost : t.createHost}
             </button>
           </div>
         </form>

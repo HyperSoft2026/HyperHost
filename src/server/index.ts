@@ -10,7 +10,7 @@ import fastifyWebsocket from '@fastify/websocket';
 import { config } from './config';
 import { globalErrorHandler } from './errors';
 import { logger } from './logger';
-import { disconnectDatabase } from './database';
+import { disconnectDatabase, initializeDatabase } from './database';
 import { controlPlaneScheduler } from './scheduler';
 import { registerHealthRoutes } from './routes/health';
 import { registerAuthRoutes } from './routes/auth';
@@ -95,9 +95,6 @@ async function bootstrapControlPlane() {
   const distIndexPath = path.join(distDir, 'index.html');
 
   if (config.nodeEnv === 'production' && !fs.existsSync(distIndexPath)) {
-    logger.info(
-      'Production frontend bundle not found at dist/index.html; building frontend assets with Vite...'
-    );
     const { build: viteBuild } = await import('vite');
     await viteBuild();
   }
@@ -153,6 +150,9 @@ async function bootstrapControlPlane() {
       });
     });
   }
+
+  // Verify PostgreSQL connection & migration state
+  await initializeDatabase();
 
   // Start Control Plane Scheduler
   controlPlaneScheduler.start(60_000);

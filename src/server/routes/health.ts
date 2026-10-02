@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { checkDatabaseHealth, getPrismaOrThrow } from '../database';
-import { isDiscordOAuthConfigured } from '../config';
+import {
+  config,
+  isDiscordLoginNotificationConfigured,
+  isDiscordOAuthConfigured,
+} from '../config';
 import { runtimeRegistry } from '../../runtime/registry';
 import { MAX_HOSTS_PER_USER, type HealthReportDTO } from '../../shared/types';
 
@@ -22,10 +26,18 @@ export async function registerHealthRoutes(app: FastifyInstance): Promise<void> 
 
     const payload: HealthReportDTO = {
       status: dbHealth.connected ? 'healthy' : 'degraded',
+      environment: config.nodeEnv,
+      version: config.version,
       api: 'online',
-      database: dbHealth,
+      database: {
+        configured: dbHealth.configured,
+        connected: dbHealth.connected,
+        ready: dbHealth.ready,
+        latencyMs: dbHealth.latencyMs,
+      },
       auth: {
         discordOAuthConfigured: isDiscordOAuthConfigured(),
+        loginNotificationConfigured: isDiscordLoginNotificationConfigured(),
       },
       runtime: {
         connectedNodes,

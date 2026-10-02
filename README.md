@@ -18,7 +18,8 @@ HyperHost enforces a strict separation between the **Control Plane** (authentica
 ## Features
 
 - **Control Plane & Runtime Plane Separation**: The Web Control Plane never executes untrusted user processes on its own host OS; all container operations are delegated to remote Runtime Nodes.
-- **Discord OAuth2 Authentication**: Native OAuth2 authorization code flow with CSRF state validation, encrypted token storage, and HTTP-only session cookies.
+- **Discord OAuth2 Authentication & Login DM Notifications**: Native OAuth2 authorization code flow with HMAC-SHA256 + cookie CSRF state validation, encrypted token storage, HTTP-only session cookies, and automated Discord Login DM Notifications (`DISCORD_BOT_TOKEN`) localized in `ar-IQ` or `en-US` with official link buttons (`Visit HyperHost` / `زيارة HyperHost` and `HyperSoft Discord` / `سيرفر HyperSoft`).
+- **Exact Bilingual Localization (`ar-IQ` RTL & `en-US` LTR)**: Built-in localization engine (`src/client/i18n.tsx`) supporting `"ar-IQ"` (default, RTL) and `"en-US"` (LTR) with persistent `localStorage` + cookie synchronization and dynamic `dir="rtl"` / `dir="ltr"` layout adaptation.
 - **Strict 10-Host Account Quota**: Enforced at the Fastify API & PostgreSQL transaction layer (`MAX_HOSTS_PER_USER = 10`).
 - **12-Module Host Control Panel**:
   - **Console**: Real-time WebSocket stream (`/api/hosts/:id/console/ws`) supporting `stdout`, `stderr`, `stdin`, clear, and reconnect. Reports `"Runtime node unavailable"` when no Runtime Node is connected.
@@ -111,6 +112,10 @@ ENCRYPTION_KEY=replace-with-64-char-random-hex
 DISCORD_CLIENT_ID=your-discord-application-client-id
 DISCORD_CLIENT_SECRET=your-discord-application-client-secret
 DISCORD_REDIRECT_URI=https://your-domain.example.com/api/auth/discord/callback
+DISCORD_BOT_TOKEN=optional-discord-bot-token-for-user-dm-login-notifications
+DISCORD_LOGIN_WEBHOOK_URL=optional-discord-webhook-url-for-login-notifications
+DISCORD_NOTIFICATION_CHANNEL_ID=optional-discord-channel-id-for-login-notifications
+ADMIN_DISCORD_IDS=optional-comma-separated-admin-discord-ids
 
 APP_URL=https://your-domain.example.com
 CORS_ORIGIN=https://your-domain.example.com

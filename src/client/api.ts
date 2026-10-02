@@ -1,4 +1,8 @@
-import type { ApiErrorPayload, ApiSuccessPayload } from '../shared/types';
+import {
+  normalizeLocale,
+  type ApiErrorPayload,
+  type ApiSuccessPayload,
+} from '../shared/types';
 
 export class ClientApiError extends Error {
   public readonly code: string;
@@ -14,12 +18,22 @@ export class ClientApiError extends Error {
   }
 }
 
+function getCurrentBrowserLocale(): string {
+  if (typeof window === 'undefined') return 'ar-IQ';
+  try {
+    return normalizeLocale(window.localStorage.getItem('hyperhost_locale'));
+  } catch {
+    return 'ar-IQ';
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
   const headers: Record<string, string> = {
     'X-HyperHost-Request': '1',
+    'X-HyperHost-Locale': getCurrentBrowserLocale(),
     ...(options?.body ? { 'Content-Type': 'application/json' } : {}),
     ...((options?.headers as Record<string, string>) || {}),
   };

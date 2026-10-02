@@ -1,5 +1,24 @@
 export const MAX_HOSTS_PER_USER = 10;
 
+export const supportedLocales = [
+  "ar-IQ",
+  "en-US",
+] as const;
+
+export type SupportedLocale = (typeof supportedLocales)[number];
+
+export function normalizeLocale(input?: string | null): SupportedLocale {
+  if (!input) return "ar-IQ";
+  const trimmed = input.trim();
+  if (trimmed === "ar-IQ" || trimmed === "en-US") {
+    return trimmed;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("ar")) return "ar-IQ";
+  if (lower.startsWith("en")) return "en-US";
+  return "ar-IQ";
+}
+
 export const HOST_PERMISSIONS = [
   'console.read',
   'console.write',
@@ -204,15 +223,18 @@ export interface HostSummaryDTO {
 
 export interface HealthReportDTO {
   status: 'healthy' | 'degraded';
+  environment: 'development' | 'production' | 'test';
+  version: string;
   api: 'online';
   database: {
     configured: boolean;
     connected: boolean;
+    ready: boolean;
     latencyMs: number | null;
-    error?: string;
   };
   auth: {
     discordOAuthConfigured: boolean;
+    loginNotificationConfigured?: boolean;
   };
   runtime: {
     connectedNodes: number;

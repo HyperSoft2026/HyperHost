@@ -8,26 +8,41 @@ const REDACTED_SUBSTRINGS = [
   'token',
   'authorization',
   'cookie',
+  'set-cookie',
   'encryptedvalue',
   'database_url',
   'databaseurl',
   'client_secret',
+  'clientsecret',
   'access_token',
+  'accesstoken',
   'refresh_token',
+  'refreshtoken',
   'session_secret',
+  'sessionsecret',
   'encryption_key',
+  'encryptionkey',
+  'webhook',
+  'discord_bot_token',
+  'bottoken',
 ];
 
-function scrubConnectionStrings(input: string): string {
-  return input.replace(
-    /\b(postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^\s"']+/gi,
-    '$1://[REDACTED]'
-  );
+function scrubSensitiveStrings(input: string): string {
+  return input
+    .replace(
+      /\b(postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^\s"']+/gi,
+      '$1://[REDACTED]'
+    )
+    .replace(
+      /https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/[^\s"']+/gi,
+      'https://discord.com/api/webhooks/[REDACTED]'
+    )
+    .replace(/\b(Bot|Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [REDACTED]');
 }
 
 function sanitizeValue(value: unknown): unknown {
   if (typeof value === 'string') {
-    return scrubConnectionStrings(value);
+    return scrubSensitiveStrings(value);
   }
   if (Array.isArray(value)) {
     return value.map(sanitizeValue);
@@ -52,7 +67,7 @@ function writeLog(
   message: string,
   meta?: Record<string, unknown>
 ): void {
-  const safeMessage = scrubConnectionStrings(message);
+  const safeMessage = scrubSensitiveStrings(message);
   const safeContext = meta
     ? (sanitizeValue(meta) as Record<string, unknown>)
     : undefined;

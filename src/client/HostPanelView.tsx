@@ -27,6 +27,7 @@ import {
   type HostRuntimeCode,
 } from '../shared/types';
 import { apiFetch, ClientApiError } from './api';
+import { useI18n } from './i18n';
 
 export type HostPanelTab =
   | 'console'
@@ -61,6 +62,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
   onBack,
   onHostDeleted,
 }) => {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<HostPanelTab>('console');
   const [hostData, setHostData] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -500,19 +502,19 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
   }
 
   const tabs: Array<{ id: HostPanelTab; label: string; icon: React.ReactNode }> = [
-    { id: 'console', label: 'Console', icon: <Terminal className="w-4 h-4" /> },
-    { id: 'files', label: 'Files', icon: <FolderOpen className="w-4 h-4" /> },
-    { id: 'startup', label: 'Startup', icon: <Cpu className="w-4 h-4" /> },
-    { id: 'network', label: 'Network', icon: <Network className="w-4 h-4" /> },
-    { id: 'metrics', label: 'Metrics', icon: <Activity className="w-4 h-4" /> },
-    { id: 'management', label: 'Management', icon: <Power className="w-4 h-4" /> },
-    { id: 'databases', label: 'Databases', icon: <Database className="w-4 h-4" /> },
-    { id: 'schedules', label: 'Schedules', icon: <Clock className="w-4 h-4" /> },
-    { id: 'backups', label: 'Backups', icon: <HardDrive className="w-4 h-4" /> },
-    { id: 'administration', label: 'Administration', icon: <Shield className="w-4 h-4" /> },
-    { id: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
-    { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
-    { id: 'activity', label: 'Activity', icon: <History className="w-4 h-4" /> },
+    { id: 'console', label: t.tabConsole, icon: <Terminal className="w-4 h-4" /> },
+    { id: 'files', label: t.tabFiles, icon: <FolderOpen className="w-4 h-4" /> },
+    { id: 'startup', label: t.tabStartup, icon: <Cpu className="w-4 h-4" /> },
+    { id: 'network', label: t.tabNetwork, icon: <Network className="w-4 h-4" /> },
+    { id: 'metrics', label: t.tabMetrics, icon: <Activity className="w-4 h-4" /> },
+    { id: 'management', label: t.tabManagement, icon: <Power className="w-4 h-4" /> },
+    { id: 'databases', label: t.tabDatabases, icon: <Database className="w-4 h-4" /> },
+    { id: 'schedules', label: t.tabSchedules, icon: <Clock className="w-4 h-4" /> },
+    { id: 'backups', label: t.tabBackups, icon: <HardDrive className="w-4 h-4" /> },
+    { id: 'administration', label: t.tabAdministration, icon: <Shield className="w-4 h-4" /> },
+    { id: 'users', label: t.tabUsers, icon: <Users className="w-4 h-4" /> },
+    { id: 'settings', label: t.tabSettings, icon: <Settings className="w-4 h-4" /> },
+    { id: 'activity', label: t.tabActivity, icon: <History className="w-4 h-4" /> },
   ];
 
   return (
@@ -532,13 +534,13 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
               {hostData ? hostData.name : 'Unassigned Host Workspace'}
             </h1>
           </div>
-          <div className="text-xs text-slate-400 pl-9">
-            <span>Status: {hostData?.status ?? 'PENDING (No Runtime Node Connected)'}</span>
+          <div className="text-xs text-slate-400 ps-9">
+            <span>{t.statusLabel}: {hostData?.status ?? 'PENDING (No Runtime Node Connected)'}</span>
             <span className="mx-2" aria-hidden="true">·</span>
-            <span>Runtime: {hostData?.runtime ?? 'NODEJS'} v{hostData?.runtimeVersion ?? '22'}</span>
+            <span>{t.runtimeLabel}: {hostData?.runtime ?? 'NODEJS'} v{hostData?.runtimeVersion ?? '22'}</span>
             <span className="mx-2" aria-hidden="true">·</span>
-            <span className="font-mono tabular-nums">
-              Limits: {hostData?.cpuLimitPercent ?? 100}% CPU / {hostData?.memoryLimitMb ?? 512} MB RAM / {hostData?.diskLimitMb ?? 2048} MB Disk
+            <span className="font-mono tabular-nums" dir="ltr">
+              {t.limitsLabel}: {hostData?.cpuLimitPercent ?? 100}% CPU / {hostData?.memoryLimitMb ?? 512} MB RAM / {hostData?.diskLimitMb ?? 2048} MB Disk
             </span>
           </div>
         </div>
@@ -549,21 +551,21 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
             onClick={() => handlePowerAction('start')}
             className="px-3 py-1.5 text-xs font-medium bg-emerald-950/50 border border-emerald-800/60 text-emerald-300 rounded-lg hover:bg-emerald-900/50 cursor-pointer"
           >
-            Start
+            {t.startBtn}
           </button>
           <button
             type="button"
             onClick={() => handlePowerAction('restart')}
             className="px-3 py-1.5 text-xs font-medium bg-slate-900 border border-slate-700 text-slate-200 rounded-lg hover:bg-slate-800 cursor-pointer"
           >
-            Restart
+            {t.restartBtn}
           </button>
           <button
             type="button"
             onClick={() => handlePowerAction('stop')}
             className="px-3 py-1.5 text-xs font-medium bg-amber-950/40 border border-amber-800/60 text-amber-300 rounded-lg hover:bg-amber-900/50 cursor-pointer"
           >
-            Stop
+            {t.stopBtn}
           </button>
         </div>
       </div>
@@ -615,7 +617,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
             <div className="rounded-xl bg-[#07080D] border border-slate-800 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-800 bg-[#11131F] flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-white">WebSocket Console Stream</span>
+                  <span className="font-semibold text-white">{t.wsConsoleStream}</span>
                   <span className="text-slate-500">·</span>
                   <span
                     className={`font-mono ${
@@ -623,10 +625,10 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     }`}
                   >
                     {wsState === 'CONNECTED'
-                      ? 'Connected'
+                      ? t.wsConnected
                       : wsState === 'CONNECTING'
-                      ? 'Connecting...'
-                      : 'Runtime node unavailable'}
+                      ? t.wsConnecting
+                      : t.runtimeNodeUnavailable}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -635,7 +637,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     onClick={() => setConsoleFrames([])}
                     className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 text-slate-300 hover:text-white cursor-pointer"
                   >
-                    Clear Console
+                    {t.clearConsole}
                   </button>
                   <button
                     type="button"
@@ -643,20 +645,20 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     className="px-2.5 py-1 rounded bg-slate-900 border border-slate-700 text-slate-300 hover:text-white inline-flex items-center gap-1 cursor-pointer"
                   >
                     <RefreshCw className="w-3 h-3" />
-                    <span>Reconnect</span>
+                    <span>{t.reconnect}</span>
                   </button>
                 </div>
               </div>
 
-              <div className="p-5 h-80 overflow-y-auto font-mono text-xs space-y-2">
+              <div className="p-5 h-80 overflow-y-auto font-mono text-xs space-y-2" dir="ltr">
                 {wsState !== 'CONNECTED' && consoleFrames.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center space-y-2 text-slate-400">
                     <Terminal className="w-7 h-7 text-slate-600" />
                     <div className="text-sm font-semibold text-slate-200">
-                      Runtime node unavailable
+                      {t.runtimeNodeUnavailable}
                     </div>
                     <p className="text-xs text-slate-500 max-w-md font-sans">
-                      No Runtime Node agent is currently connected to stream stdout/stderr for this Host. Connect a Runtime Node daemon to enable live process execution.
+                      {t.consoleUnavailableDesc}
                     </p>
                   </div>
                 ) : (
@@ -691,10 +693,11 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     );
                     setConsoleInput('');
                   } else {
-                    setPanelError('[RUNTIME_NODE_UNAVAILABLE] Runtime node unavailable');
+                    setPanelError(`[RUNTIME_NODE_UNAVAILABLE] ${t.runtimeNodeUnavailable}`);
                   }
                 }}
                 className="border-t border-slate-800 bg-[#11131F] px-4 py-2.5 flex items-center gap-3"
+                dir="ltr"
               >
                 <span className="text-xs font-mono text-indigo-400">stdin &gt;</span>
                 <input
@@ -703,8 +706,8 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   onChange={(e) => setConsoleInput(e.target.value)}
                   placeholder={
                     wsState === 'CONNECTED'
-                      ? 'Send command to container stdin...'
-                      : 'Runtime node unavailable — stdin disabled'
+                      ? t.stdinPlaceholderConnected
+                      : t.stdinPlaceholderDisconnected
                   }
                   className="flex-1 bg-transparent text-xs font-mono text-white placeholder:text-slate-500 focus:outline-none"
                 />
@@ -712,7 +715,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   type="submit"
                   className="px-3 py-1 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded cursor-pointer"
                 >
-                  Send
+                  {t.sendBtn}
                 </button>
               </form>
             </div>
@@ -723,9 +726,9 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
             <div className="p-6 rounded-xl bg-[#11131F] border border-slate-800 space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-bold text-white">Remote Node File Manager</h2>
-                  <p className="text-xs text-slate-400 font-mono">
-                    Working Path: {currentPath}
+                  <h2 className="text-base font-bold text-white">{t.remoteFileManager}</h2>
+                  <p className="text-xs text-slate-400 font-mono" dir="ltr">
+                    {t.workingPath}: {currentPath}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -733,7 +736,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     type="text"
                     value={newFileName}
                     onChange={(e) => setNewFileName(e.target.value)}
-                    placeholder="New file or folder name"
+                    placeholder={t.newFileOrFolderPlaceholder}
                     className="px-3 py-1.5 text-xs bg-[#090A10] border border-slate-800 rounded-lg text-white"
                   />
                   <button
@@ -763,7 +766,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     }}
                     className="px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg cursor-pointer"
                   >
-                    Create File
+                    {t.createFileBtn}
                   </button>
                   <button
                     type="button"
@@ -791,7 +794,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     }}
                     className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg cursor-pointer"
                   >
-                    Create Folder
+                    {t.createFolderBtn}
                   </button>
                 </div>
               </div>
@@ -799,20 +802,20 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
               {fileError || fileEntries.length === 0 ? (
                 <div className="p-8 rounded-lg bg-[#090A10] border border-slate-800 text-center space-y-2">
                   <div className="text-sm font-semibold text-slate-200">
-                    {fileError || 'Runtime node unavailable'}
+                    {fileError || t.runtimeNodeUnavailable}
                   </div>
                   <p className="text-xs text-slate-500 max-w-lg mx-auto">
-                    Host files reside exclusively on isolated Runtime Node volumes and never on the Control Plane web filesystem. Connect the assigned Runtime Node to browse, edit, upload, or download container files.
+                    {t.filesUnavailableDesc}
                   </p>
                 </div>
               ) : (
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full text-start text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 text-slate-400">
-                      <th className="py-2.5 px-3">Name</th>
-                      <th className="py-2.5 px-3">Type</th>
-                      <th className="py-2.5 px-3 text-right">Size</th>
-                      <th className="py-2.5 px-3 text-right">Modified</th>
+                      <th className="py-2.5 px-3">{t.fileColName}</th>
+                      <th className="py-2.5 px-3">{t.fileColType}</th>
+                      <th className="py-2.5 px-3 text-end">{t.fileColSize}</th>
+                      <th className="py-2.5 px-3 text-end">{t.fileColModified}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
@@ -820,12 +823,12 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                       <tr key={item.path}>
                         <td className="py-2.5 px-3 font-mono text-white">{item.name}</td>
                         <td className="py-2.5 px-3 text-slate-400">
-                          {item.isDirectory ? 'Directory' : 'File'}
+                          {item.isDirectory ? t.fileTypeDir : t.fileTypeFile}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-300">
+                        <td className="py-2.5 px-3 text-end font-mono tabular-nums text-slate-300">
                           {item.sizeBytes} B
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-slate-400">
+                        <td className="py-2.5 px-3 text-end font-mono text-slate-400">
                           {item.modifiedAt}
                         </td>
                       </tr>
@@ -844,17 +847,17 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
             >
               <div>
                 <h2 className="text-base font-bold text-white">
-                  Startup Configuration & Encrypted Environment Vault
+                  {t.startupVaultTitle}
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Configure container entrypoint, runtime version, working directory, and AES-256-GCM encrypted variables. Secrets are never exposed in Activity Logs.
+                  {t.startupVaultDesc}
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Runtime Environment
+                    {t.runtimeEnvLabel}
                   </label>
                   <select
                     value={startupRuntime}
@@ -871,49 +874,53 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
 
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Runtime Version
+                    {t.runtimeVersionLabel}
                   </label>
                   <input
                     type="text"
                     value={startupVersion}
                     onChange={(e) => setStartupVersion(e.target.value)}
+                    dir="ltr"
                     className="w-full px-3 py-2 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Startup Command
+                    {t.startupCommandLabel}
                   </label>
                   <input
                     type="text"
                     value={startupCommand}
                     onChange={(e) => setStartupCommand(e.target.value)}
+                    dir="ltr"
                     className="w-full px-3 py-2 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Arguments (Space-separated)
+                    {t.startupArgsLabel}
                   </label>
                   <input
                     type="text"
                     value={startupArgs}
                     onChange={(e) => setStartupArgs(e.target.value)}
                     placeholder="--enable-source-maps"
+                    dir="ltr"
                     className="w-full px-3 py-2 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
                   />
                 </div>
 
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Container Working Directory
+                    {t.workingDirLabel}
                   </label>
                   <input
                     type="text"
                     value={workingDir}
                     onChange={(e) => setWorkingDir(e.target.value)}
+                    dir="ltr"
                     className="w-full px-3 py-2 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
                   />
                 </div>
@@ -922,7 +929,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
               {/* Environment Variables List */}
               <div className="space-y-3 pt-4 border-t border-slate-800">
                 <div className="text-xs font-semibold text-slate-200">
-                  Environment Variables ({envVars.length})
+                  {t.envVarsTitle} ({envVars.length})
                 </div>
 
                 {envVars.length > 0 && (
@@ -947,7 +954,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                           className="flex-1 bg-transparent text-slate-200 focus:outline-none"
                         />
                         <span className="text-[11px] font-sans text-slate-500">
-                          {env.isSecret ? 'Secret' : 'Plain'}
+                          {env.isSecret ? t.secretLabel : t.plainLabel}
                         </span>
                         <button
                           type="button"
@@ -970,14 +977,16 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     onChange={(e) =>
                       setNewEnvKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_'))
                     }
-                    placeholder="KEY_NAME (e.g. DISCORD_TOKEN)"
+                    placeholder={t.envKeyPlaceholder}
+                    dir="ltr"
                     className="px-3 py-1.5 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
                   />
                   <input
                     type="password"
                     value={newEnvVal}
                     onChange={(e) => setNewEnvVal(e.target.value)}
-                    placeholder="Secret or configuration value"
+                    placeholder={t.envValPlaceholder}
+                    dir="ltr"
                     className="flex-1 min-w-[200px] px-3 py-1.5 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
                   />
                   <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
@@ -986,7 +995,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                       checked={newEnvSecret}
                       onChange={(e) => setNewEnvSecret(e.target.checked)}
                     />
-                    <span>Secret</span>
+                    <span>{t.secretLabel}</span>
                   </label>
                   <button
                     type="button"
@@ -1006,7 +1015,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     className="px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-white rounded-lg inline-flex items-center gap-1 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Add Variable</span>
+                    <span>{t.addVariableBtn}</span>
                   </button>
                 </div>
               </div>
@@ -1016,7 +1025,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   type="submit"
                   className="px-5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg cursor-pointer"
                 >
-                  Save Startup Configuration
+                  {t.saveStartupBtn}
                 </button>
               </div>
             </form>
@@ -1026,25 +1035,25 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
           {activeTab === 'network' && (
             <div className="p-6 rounded-xl bg-[#11131F] border border-slate-800 space-y-5">
               <div>
-                <h2 className="text-base font-bold text-white">Network & Node Allocations</h2>
+                <h2 className="text-base font-bold text-white">{t.networkTitle}</h2>
                 <p className="text-xs text-slate-400">
-                  IP, Port, and Protocol bindings assigned to this Host on its Runtime Node.
+                  {t.networkDesc}
                 </p>
               </div>
 
               {allocations.length === 0 ? (
                 <div className="p-8 rounded-lg bg-[#090A10] border border-slate-800 text-center text-xs text-slate-400">
-                  No network allocations assigned. Assign this Host to a Runtime Node with an available IP/Port pool.
+                  {t.noAllocations}
                 </div>
               ) : (
-                <table className="w-full text-left text-xs border-collapse">
+                <table className="w-full text-start text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 text-slate-400">
-                      <th className="py-2.5 px-3">IP Address</th>
-                      <th className="py-2.5 px-3">Port</th>
-                      <th className="py-2.5 px-3">Protocol</th>
-                      <th className="py-2.5 px-3">Role</th>
-                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3">{t.netColIp}</th>
+                      <th className="py-2.5 px-3">{t.netColPort}</th>
+                      <th className="py-2.5 px-3">{t.netColProto}</th>
+                      <th className="py-2.5 px-3">{t.netColRole}</th>
+                      <th className="py-2.5 px-3">{t.netColStatus}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800 font-mono">
@@ -1054,7 +1063,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                         <td className="py-2.5 px-3 tabular-nums text-indigo-300">{a.port}</td>
                         <td className="py-2.5 px-3 text-slate-300">{a.protocol}</td>
                         <td className="py-2.5 px-3 font-sans text-slate-300">
-                          {a.isPrimary ? 'Primary' : 'Secondary'}
+                          {a.isPrimary ? t.netRolePrimary : t.netRoleSecondary}
                         </td>
                         <td className="py-2.5 px-3 font-sans text-emerald-400">{a.status}</td>
                       </tr>
@@ -1069,9 +1078,9 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
           {activeTab === 'metrics' && (
             <div className="p-6 rounded-xl bg-[#11131F] border border-slate-800 space-y-5">
               <div>
-                <h2 className="text-base font-bold text-white">Container Resource Telemetry</h2>
+                <h2 className="text-base font-bold text-white">{t.metricsTitle}</h2>
                 <p className="text-xs text-slate-400">
-                  Real-time CPU, Memory, Disk, Network RX/TX, and Uptime reported by the Runtime Node MetricsCollector.
+                  {t.metricsDesc}
                 </p>
               </div>
 
@@ -1079,29 +1088,29 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                 <div className="p-10 rounded-lg bg-[#090A10] border border-slate-800 text-center space-y-2">
                   <Activity className="w-7 h-7 text-slate-600 mx-auto" />
                   <div className="text-sm font-semibold text-slate-200">
-                    No metrics available
+                    {t.noMetricsAvailable}
                   </div>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Runtime Node telemetry is currently unavailable. HyperHost never displays fabricated CPU, RAM, or network metrics when a Runtime Node is offline.
+                    {t.metricsUnavailableDesc}
                   </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 font-mono text-xs">
                   <div className="p-4 rounded-lg bg-[#090A10] border border-slate-800">
-                    <div className="text-slate-400 font-sans">CPU Load</div>
-                    <div className="text-lg font-bold text-white tabular-nums mt-1">
+                    <div className="text-slate-400 font-sans">{t.metricsCpuLoad}</div>
+                    <div className="text-lg font-bold text-white tabular-nums mt-1" dir="ltr">
                       {metricsState.metrics.cpuPercent}%
                     </div>
                   </div>
                   <div className="p-4 rounded-lg bg-[#090A10] border border-slate-800">
-                    <div className="text-slate-400 font-sans">Memory Usage</div>
-                    <div className="text-lg font-bold text-white tabular-nums mt-1">
+                    <div className="text-slate-400 font-sans">{t.metricsMemoryUsage}</div>
+                    <div className="text-lg font-bold text-white tabular-nums mt-1" dir="ltr">
                       {Math.round(metricsState.metrics.memoryBytes / 1048576)} MB
                     </div>
                   </div>
                   <div className="p-4 rounded-lg bg-[#090A10] border border-slate-800">
-                    <div className="text-slate-400 font-sans">Uptime</div>
-                    <div className="text-lg font-bold text-white tabular-nums mt-1">
+                    <div className="text-slate-400 font-sans">{t.metricsUptime}</div>
+                    <div className="text-lg font-bold text-white tabular-nums mt-1" dir="ltr">
                       {metricsState.metrics.uptimeSeconds}s
                     </div>
                   </div>
@@ -1114,27 +1123,27 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
           {activeTab === 'management' && (
             <div className="p-6 rounded-xl bg-[#11131F] border border-slate-800 space-y-6">
               <div>
-                <h2 className="text-base font-bold text-white">Process & Container Lifecycle Management</h2>
+                <h2 className="text-base font-bold text-white">{t.managementTitle}</h2>
                 <p className="text-xs text-slate-400">
-                  Dispatch lifecycle commands to the Runtime Node ProcessManager and ContainerManager. If the Runtime Node is offline, the API returns a structured error rather than faking success.
+                  {t.managementDesc}
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 {(
                   [
-                    { action: 'start', label: 'Start Host', desc: 'Boot container entrypoint' },
-                    { action: 'stop', label: 'Stop Host', desc: 'Send graceful SIGTERM' },
-                    { action: 'restart', label: 'Restart Host', desc: 'Graceful stop & start' },
-                    { action: 'kill', label: 'Kill Process', desc: 'Force immediate SIGKILL' },
-                    { action: 'reinstall', label: 'Reinstall Image', desc: 'Rebuild runtime container' },
+                    { action: 'start', label: t.mgmtStartTitle, desc: t.mgmtStartDesc },
+                    { action: 'stop', label: t.mgmtStopTitle, desc: t.mgmtStopDesc },
+                    { action: 'restart', label: t.mgmtRestartTitle, desc: t.mgmtRestartDesc },
+                    { action: 'kill', label: t.mgmtKillTitle, desc: t.mgmtKillDesc },
+                    { action: 'reinstall', label: t.mgmtReinstallTitle, desc: t.mgmtReinstallDesc },
                   ] as const
                 ).map((item) => (
                   <button
                     key={item.action}
                     type="button"
                     onClick={() => handlePowerAction(item.action)}
-                    className="p-4 rounded-xl bg-[#090A10] hover:bg-slate-900 border border-slate-800 text-left space-y-1 transition-colors cursor-pointer"
+                    className="p-4 rounded-xl bg-[#090A10] hover:bg-slate-900 border border-slate-800 text-start space-y-1 transition-colors cursor-pointer"
                   >
                     <div className="text-xs font-bold text-white">{item.label}</div>
                     <div className="text-[11px] text-slate-400">{item.desc}</div>
@@ -1148,9 +1157,9 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
           {activeTab === 'databases' && (
             <div className="p-6 rounded-xl bg-[#11131F] border border-slate-800 space-y-6">
               <div>
-                <h2 className="text-base font-bold text-white">Host Databases</h2>
+                <h2 className="text-base font-bold text-white">{t.databasesTitle}</h2>
                 <p className="text-xs text-slate-400">
-                  Dedicated database provisioning abstraction supporting PostgreSQL, MySQL, MongoDB, and Redis on Runtime Nodes.
+                  {t.databasesDesc}
                 </p>
               </div>
 
@@ -1161,6 +1170,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   value={dbName}
                   onChange={(e) => setDbName(e.target.value)}
                   placeholder="database_name"
+                  dir="ltr"
                   className="px-3 py-2 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
                 />
                 <select
@@ -1177,13 +1187,13 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   type="submit"
                   className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg cursor-pointer"
                 >
-                  Provision Database
+                  {t.provisionDatabaseBtn}
                 </button>
               </form>
 
               {databases.length === 0 ? (
                 <div className="p-6 rounded-lg bg-[#090A10] border border-slate-800 text-center text-xs text-slate-400">
-                  No databases provisioned for this Host.
+                  {t.noDatabases}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -1213,9 +1223,9 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
           {activeTab === 'schedules' && (
             <div className="p-6 rounded-xl bg-[#11131F] border border-slate-800 space-y-6">
               <div>
-                <h2 className="text-base font-bold text-white">Control Plane Cron Schedules</h2>
+                <h2 className="text-base font-bold text-white">{t.schedulesTitle}</h2>
                 <p className="text-xs text-slate-400">
-                  Automated cron tasks executed by the backend Control Plane Scheduler Worker.
+                  {t.schedulesDesc}
                 </p>
               </div>
 
@@ -1225,7 +1235,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   required
                   value={schedName}
                   onChange={(e) => setSchedName(e.target.value)}
-                  placeholder="Daily Restart"
+                  placeholder={t.schedNamePlaceholder}
                   className="px-3 py-2 text-xs bg-[#090A10] border border-slate-800 rounded-lg text-white"
                 />
                 <input
@@ -1234,6 +1244,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   value={schedCron}
                   onChange={(e) => setSchedCron(e.target.value)}
                   placeholder="0 */24 * * *"
+                  dir="ltr"
                   className="px-3 py-2 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
                 />
                 <select
@@ -1241,23 +1252,23 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   onChange={(e) => setSchedTask(e.target.value as any)}
                   className="px-3 py-2 text-xs bg-[#090A10] border border-slate-800 rounded-lg text-white"
                 >
-                  <option value="POWER_RESTART">Restart Host</option>
-                  <option value="POWER_START">Start Host</option>
-                  <option value="POWER_STOP">Stop Host</option>
-                  <option value="EXECUTE_COMMAND">Execute Command</option>
-                  <option value="CREATE_BACKUP">Create Backup</option>
+                  <option value="POWER_RESTART">{t.schedTaskRestart}</option>
+                  <option value="POWER_START">{t.schedTaskStart}</option>
+                  <option value="POWER_STOP">{t.schedTaskStop}</option>
+                  <option value="EXECUTE_COMMAND">{t.schedTaskCommand}</option>
+                  <option value="CREATE_BACKUP">{t.schedTaskBackup}</option>
                 </select>
                 <button
                   type="submit"
                   className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg cursor-pointer"
                 >
-                  Add Schedule
+                  {t.addScheduleBtn}
                 </button>
               </form>
 
               {schedules.length === 0 ? (
                 <div className="p-6 rounded-lg bg-[#090A10] border border-slate-800 text-center text-xs text-slate-400">
-                  No cron schedules configured for this Host.
+                  {t.noSchedules}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -1274,7 +1285,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                         <span className="text-slate-400">{s.taskType}</span>
                       </div>
                       <span className="text-slate-400 font-mono">
-                        {s.lastStatus || 'Scheduled'}
+                        {s.lastStatus || t.schedStatusScheduled}
                       </span>
                     </div>
                   ))}
@@ -1287,9 +1298,9 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
           {activeTab === 'backups' && (
             <div className="p-6 rounded-xl bg-[#11131F] border border-slate-800 space-y-6">
               <div>
-                <h2 className="text-base font-bold text-white">Object Storage Backups (S3 Abstraction)</h2>
+                <h2 className="text-base font-bold text-white">{t.backupsTitle}</h2>
                 <p className="text-xs text-slate-400">
-                  Create, restore, download, or delete off-node archive snapshots stored in S3-compatible Object Storage.
+                  {t.backupsDesc}
                 </p>
               </div>
 
@@ -1299,20 +1310,20 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   required
                   value={backupName}
                   onChange={(e) => setBackupName(e.target.value)}
-                  placeholder="Pre-release snapshot"
+                  placeholder={t.backupNamePlaceholder}
                   className="px-3 py-2 text-xs bg-[#090A10] border border-slate-800 rounded-lg text-white"
                 />
                 <button
                   type="submit"
                   className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg cursor-pointer"
                 >
-                  Create Backup
+                  {t.createBackupBtn}
                 </button>
               </form>
 
               {backups.length === 0 ? (
                 <div className="p-6 rounded-lg bg-[#090A10] border border-slate-800 text-center text-xs text-slate-400">
-                  No backups recorded for this Host.
+                  {t.noBackups}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -1341,17 +1352,17 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
             <div className="p-6 rounded-xl bg-[#11131F] border border-slate-800 space-y-6">
               <div>
                 <h2 className="text-base font-bold text-white">
-                  Collaborators & Granular Permissions ({HOST_PERMISSIONS.length} Scopes)
+                  {t.collaboratorsTitle} ({HOST_PERMISSIONS.length})
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Assign fine-grained access scopes to collaborators by their Discord ID. The Host Owner retains full administrative privileges.
+                  {t.collaboratorsDesc}
                 </p>
               </div>
 
               <form onSubmit={handleAddCollaborator} className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Collaborator Discord ID
+                    {t.collaboratorDiscordIdLabel}
                   </label>
                   <input
                     type="text"
@@ -1359,15 +1370,16 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     value={collabDiscordId}
                     onChange={(e) => setCollabDiscordId(e.target.value)}
                     placeholder="e.g. 108492019482710293"
+                    dir="ltr"
                     className="w-full max-w-sm px-3 py-2 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
                   />
                 </div>
 
                 <div>
                   <div className="text-xs font-medium text-slate-300 mb-2">
-                    Select Granular Permissions
+                    {t.selectPermissionsLabel}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2" dir="ltr">
                     {HOST_PERMISSIONS.map((perm) => {
                       const checked = selectedPerms.includes(perm);
                       return (
@@ -1397,7 +1409,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   type="submit"
                   className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg cursor-pointer"
                 >
-                  Grant Collaborator Permissions
+                  {t.grantPermissionsBtn}
                 </button>
               </form>
 
@@ -1428,10 +1440,10 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
           {activeTab === 'settings' && (
             <div className="p-6 rounded-xl bg-[#11131F] border border-slate-800 space-y-6">
               <form onSubmit={handleSaveSettings} className="space-y-4 max-w-xl">
-                <h2 className="text-base font-bold text-white">Host Settings</h2>
+                <h2 className="text-base font-bold text-white">{t.hostSettingsTitle}</h2>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Host Name
+                    {t.hostNameLabel}
                   </label>
                   <input
                     type="text"
@@ -1443,7 +1455,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Description
+                    {t.descriptionOptionalLabel}
                   </label>
                   <input
                     type="text"
@@ -1456,16 +1468,16 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   type="submit"
                   className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg cursor-pointer"
                 >
-                  Save Settings
+                  {t.saveSettingsBtn}
                 </button>
               </form>
 
               {hostId && (
                 <div className="pt-6 border-t border-slate-800 flex items-center justify-between">
                   <div>
-                    <div className="text-xs font-bold text-red-400">Delete Host</div>
+                    <div className="text-xs font-bold text-red-400">{t.deleteHostTitle}</div>
                     <div className="text-xs text-slate-400">
-                      Permanently remove this Host and release its Node allocations.
+                      {t.deleteHostDesc}
                     </div>
                   </div>
                   <button
@@ -1473,7 +1485,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     onClick={handleDeleteHost}
                     className="px-4 py-2 text-xs font-semibold bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-200 rounded-lg cursor-pointer"
                   >
-                    Delete Host
+                    {t.deleteHostTitle}
                   </button>
                 </div>
               )}
@@ -1484,15 +1496,15 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
           {activeTab === 'activity' && (
             <div className="p-6 rounded-xl bg-[#11131F] border border-slate-800 space-y-4">
               <div>
-                <h2 className="text-base font-bold text-white">Host Audit Activity Log</h2>
+                <h2 className="text-base font-bold text-white">{t.activityLogTitle}</h2>
                 <p className="text-xs text-slate-400">
-                  Cryptographically sanitized audit trail of actions performed on this Host.
+                  {t.activityLogDesc}
                 </p>
               </div>
 
               {activityLogs.length === 0 ? (
                 <div className="p-6 rounded-lg bg-[#090A10] border border-slate-800 text-center text-xs text-slate-400">
-                  No activity events recorded yet.
+                  {t.noActivityEvents}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -1505,7 +1517,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                         <span className="font-semibold text-white">{log.action}</span>
                         <span className="mx-2 text-slate-500">·</span>
                         <span className="text-slate-400">
-                          Actor: {log.actor?.displayName || 'System'}
+                          {t.actorLabel}: {log.actor?.displayName || t.systemActor}
                         </span>
                         {log.ipAddress && (
                           <>

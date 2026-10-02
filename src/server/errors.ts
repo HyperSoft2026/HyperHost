@@ -1,4 +1,5 @@
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import { logger } from './logger';
 
@@ -48,6 +49,50 @@ export function globalErrorHandler(
           path: i.path.join('.'),
           message: i.message,
         })),
+      },
+    });
+    return;
+  }
+
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === 'P2021') {
+      logger.error('Database table does not exist (migrations not applied)', {
+        prismaCode: error.code,
+        url: request.url,
+      });
+      reply.status(503).send({
+        success: false,
+        error: {
+          code: 'DATABASE_SCHEMA_NOT_MIGRATED',
+          message:
+            'Database schema is not initialized. Please run "npm run db:deploy" (prisma migrate deploy).',
+        },
+      });
+      return;
+    }
+
+    if (error.code === 'P2002') {
+      reply.status(409).send({
+        success: false,
+        error: {
+          code: 'RESOURCE_CONFLICT',
+          message: 'A record with the provided unique identifier already exists.',
+        },
+      });
+      return;
+    }
+  }
+
+  if (error instanceof Prisma.PrismaClientInitializationError) {
+    logger.error('Database connection initialization failed', {
+      url: request.url,
+      errorCode: error.errorCode,
+    });
+    reply.status(503).send({
+      success: false,
+      error: {
+        code: 'DATABASE_UNAVAILABLE',
+        message: 'Unable to establish connection to the PostgreSQL database.',
       },
     });
     return;
