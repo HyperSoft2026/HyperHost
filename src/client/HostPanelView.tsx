@@ -65,7 +65,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
   onBack,
   onHostDeleted,
 }) => {
-  const { t, isRtl } = useI18n();
+  const { t, isRtl, locale } = useI18n();
   const [activeTab, setActiveTab] = useState<HostPanelTab>('console');
   const [hostData, setHostData] = useState<any | null>(null);
   const [copiedId, setCopiedId] = useState<boolean>(false);
@@ -211,7 +211,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
 
     setWsState('CONNECTING');
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${window.location.host}/api/hosts/${hostId}/console/ws`;
+    const wsUrl = `${proto}//${window.location.host}/api/hosts/${hostId}/console/ws?locale=${encodeURIComponent(locale)}`;
     const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
 
@@ -654,10 +654,10 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     }`}
                   >
                     {wsState === 'CONNECTED'
-                      ? t.wsConnected
+                      ? t['console.connected']
                       : wsState === 'CONNECTING'
-                      ? t.wsConnecting
-                      : t.runtimeNodeUnavailable}
+                      ? t['console.connecting']
+                      : t['console.runtimeUnavailable']}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -681,13 +681,16 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
 
               <div className="p-5 h-80 overflow-y-auto font-mono text-xs space-y-2" dir="ltr">
                 {wsState !== 'CONNECTED' && consoleFrames.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center space-y-2 text-slate-400">
+                  <div
+                    className="h-full flex flex-col items-center justify-center text-center space-y-2 text-slate-400"
+                    dir={isRtl ? 'rtl' : 'ltr'}
+                  >
                     <Terminal className="w-7 h-7 text-slate-600" />
-                    <div className="text-sm font-semibold text-slate-200">
-                      {t.runtimeNodeUnavailable}
+                    <div className="text-sm font-semibold text-slate-200 font-sans">
+                      {t['console.runtimeUnavailable']}
                     </div>
-                    <p className="text-xs text-slate-500 max-w-md font-sans">
-                      {t.consoleUnavailableDesc}
+                    <p className="text-xs text-slate-400 max-w-md font-sans">
+                      {t['runtime.node.unavailable']}
                     </p>
                   </div>
                 ) : (

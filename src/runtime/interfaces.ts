@@ -1,10 +1,30 @@
-import type { HostRuntimeCode, HostStatusCode } from '../shared/types';
+import type {
+  HostRuntimeCode,
+  HostStatusCode,
+  NodeStatusCode,
+} from '../shared/types';
 
 export interface ContainerResourceSpec {
   memoryLimitMb: number;
   cpuLimitPercent: number;
   diskLimitMb: number;
   networkBandwidthMbps?: number;
+}
+
+export interface NodeResourceTelemetry {
+  cpuUsagePercent: number;
+  memoryUsedMb: number;
+  memoryTotalMb: number;
+  diskUsedMb: number;
+  diskTotalMb: number;
+  activeContainers: number;
+}
+
+export interface NodeCapabilities {
+  version: string;
+  supportedRuntimes: HostRuntimeCode[];
+  osPlatform?: string;
+  architecture?: string;
 }
 
 export interface RuntimeExecutionSpec {
@@ -57,7 +77,11 @@ export interface ConsoleStreamFrame {
 export interface RuntimeAdapter {
   readonly runtime: HostRuntimeCode;
   resolveDockerImage(version: string): string;
-  buildEntrypointCommand(command: string, args: string[], resources: ContainerResourceSpec): string[];
+  buildEntrypointCommand(
+    command: string,
+    args: string[],
+    resources: ContainerResourceSpec
+  ): string[];
 }
 
 export interface ProcessManager {
@@ -83,19 +107,15 @@ export interface FileManager {
   renamePath(hostId: string, sourcePath: string, targetPath: string): Promise<void>;
   movePath(hostId: string, sourcePath: string, targetPath: string): Promise<void>;
   deletePath(hostId: string, targetPath: string): Promise<void>;
-  getDownloadStreamUrl(hostId: string, filePath: string): Promise<{ signedUrl: string; expiresAt: string }>;
+  getDownloadStreamUrl(
+    hostId: string,
+    filePath: string
+  ): Promise<{ signedUrl: string; expiresAt: string }>;
 }
 
 export interface MetricsCollector {
   collectHostMetrics(hostId: string): Promise<HostLiveMetrics>;
-  collectNodeTelemetry(): Promise<{
-    cpuUsagePercent: number;
-    memoryUsedMb: number;
-    memoryTotalMb: number;
-    diskUsedMb: number;
-    diskTotalMb: number;
-    activeContainers: number;
-  }>;
+  collectNodeTelemetry(): Promise<NodeResourceTelemetry>;
 }
 
 export interface DatabaseProvisioner {
@@ -132,13 +152,19 @@ export interface BackupStorageAdapter {
     storageKey: string;
   }): Promise<void>;
   deleteArchiveSnapshot(storageKey: string): Promise<void>;
-  generatePresignedDownloadUrl(storageKey: string): Promise<{ url: string; expiresAt: string }>;
+  generatePresignedDownloadUrl(
+    storageKey: string
+  ): Promise<{ url: string; expiresAt: string }>;
 }
 
 export interface NodeAgent {
   readonly nodeId: string;
   readonly fqdn: string;
   readonly isConnected: boolean;
+  readonly handshakeCompleted: boolean;
+  readonly status: NodeStatusCode;
+  readonly capabilities: NodeCapabilities;
+  readonly resources: NodeResourceTelemetry | null;
   readonly lastHeartbeatAt: Date | null;
   readonly processManager: ProcessManager;
   readonly containerManager: ContainerManager;
@@ -150,4 +176,6 @@ export interface NodeAgent {
     hostId: string,
     onFrame: (frame: ConsoleStreamFrame) => void
   ): () => void;
+  recordHeartbeat(telemetry?: Partial<NodeResourceTelemetry>, status?: NodeStatusCode): void;
+  disconnect(): void;
 }

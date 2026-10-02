@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   recordActivityLog,
   requireAuth,
@@ -12,7 +12,10 @@ import {
   generateSecureToken,
   maskSecret,
 } from '../crypto';
-import { runtimeRegistry } from '../../runtime/registry';
+import {
+  getRuntimeUnavailableLocalizedMessage,
+  runtimeRegistry,
+} from '../../runtime/registry';
 import { sendDiscordHostCreatedNotification } from '../discord-notify';
 import { formatEntityPublicId, generatePublicId } from '../../shared/ids';
 import {
@@ -22,6 +25,7 @@ import {
   RUNTIME_CATALOG,
   type HostPermissionScope,
   type HostSummaryDTO,
+  type SupportedLocale,
 } from '../../shared/types';
 import {
   CreateAllocationRequestSchema,
@@ -35,6 +39,17 @@ import {
   UpdateStartupSchema,
   UpsertCollaboratorSchema,
 } from '../../shared/validation';
+
+function resolveRequestLocale(request: FastifyRequest): SupportedLocale {
+  const query = request.query as { locale?: string } | undefined;
+  const headerLocale = request.headers['x-hyperhost-locale'];
+  const cookieLocale = request.cookies?.['hyperhost_locale'];
+  return normalizeLocale(
+    query?.locale ||
+      (typeof headerLocale === 'string' ? headerLocale : undefined) ||
+      cookieLocale
+  );
+}
 
 export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/hosts — List user's owned & accessible Hosts + dashboard aggregate stats
@@ -189,19 +204,34 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     let selectedNodeId: string | null = null;
     let nodeIsLive = false;
 
+    // Security Requirement: Regular users cannot specify nodeId directly.
+    // Only Administrators may explicitly pin a nodeId; otherwise the Control Plane auto-assigns an ONLINE node.
     if (body.nodeId) {
+      if (user.role !== 'ADMIN') {
+        throw new AppError(
+          'FORBIDDEN_NODE_SELECTION',
+          'Only Control Plane administrators may manually specify a target Runtime Node.',
+          403
+        );
+      }
       const node = await prisma.node.findUnique({ where: { id: body.nodeId } });
       if (!node) {
         throw new AppError('NODE_NOT_FOUND', 'The selected Runtime Node does not exist.', 404);
       }
       selectedNodeId = node.id;
       nodeIsLive = runtimeRegistry.isNodeConnected(node.id);
+    } else {
+      const optimalAgent = runtimeRegistry.selectOptimalConnectedNode(body.runtime);
+      if (optimalAgent) {
+        selectedNodeId = optimalAgent.nodeId;
+        nodeIsLive = true;
+      }
     }
 
     const adapter = runtimeRegistry.getRuntimeAdapter(body.runtime);
     const dockerImage = adapter.resolveDockerImage(body.runtimeVersion);
 
-    // Never pretend a Host is ONLINE if no Runtime Node is connected; create as PENDING
+    // Never pretend a Host is ONLINE/RUNNING if no Runtime Node is connected; create as PENDING
     const initialStatus = nodeIsLive ? 'INSTALLING' : 'PENDING';
 
     const generatedServerId = generatePublicId('srv');
@@ -251,6 +281,29 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
+    const requestLocale = resolveRequestLocale(request);
+    const userPublicId = formatEntityPublicId('usr', user.id, user.publicId);
+
+    // Dispatch verified Discord DM notification after PostgreSQL persistence succeeds
+    const dmResult = await sendDiscordHostCreatedNotification({
+      discordId: user.discordId,
+      username: user.username,
+      displayName: user.displayName,
+      userPublicId,
+      hostId: createdHost.id,
+      serverId: serverPublicId,
+      hostName: createdHost.name,
+      hostType: createdHost.type,
+      runtime: createdHost.runtime,
+      runtimeVersion: createdHost.runtimeVersion,
+      memoryLimitMb: createdHost.memoryLimitMb,
+      diskLimitMb: createdHost.diskLimitMb,
+      cpuLimitPercent: createdHost.cpuLimitPercent,
+      status: createdHost.status,
+      createdAt: createdHost.createdAt,
+      locale: requestLocale,
+    });
+
     await recordActivityLog({
       userId: user.id,
       hostId: createdHost.id,
@@ -264,27 +317,10 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
         memoryLimitMb: createdHost.memoryLimitMb,
         cpuLimitPercent: createdHost.cpuLimitPercent,
         diskLimitMb: createdHost.diskLimitMb,
+        discordHostDmSent: dmResult.ok,
+        discordHostDmReason: dmResult.ok ? null : dmResult.reason,
       },
       request,
-    });
-
-    const requestLocale = normalizeLocale(
-      (request.headers['x-hyperhost-locale'] as string | undefined) ||
-        request.cookies?.['hyperhost_locale']
-    );
-
-    // Dispatch fail-safe Discord DM notification after PostgreSQL persistence succeeds
-    void sendDiscordHostCreatedNotification({
-      discordId: user.discordId,
-      username: user.username,
-      hostId: createdHost.id,
-      serverId: serverPublicId,
-      hostName: createdHost.name,
-      runtime: createdHost.runtime,
-      runtimeVersion: createdHost.runtimeVersion,
-      status: createdHost.status,
-      createdAt: createdHost.createdAt,
-      locale: requestLocale,
     });
 
     reply.status(201);
@@ -294,8 +330,13 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
         host: {
           ...createdHost,
           publicId: serverPublicId,
+          serverId: serverPublicId,
           createdAt: createdHost.createdAt.toISOString(),
           updatedAt: createdHost.updatedAt.toISOString(),
+        },
+        notification: {
+          sent: dmResult.ok,
+          reason: dmResult.ok ? null : dmResult.reason,
         },
       },
     };
@@ -432,6 +473,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/hosts/:id/console', async (request) => {
     const { id } = request.params as { id: string };
     const { host } = await requireHostPermission(request, id, 'console.read');
+    const locale = resolveRequestLocale(request);
     const nodeConnected = runtimeRegistry.isNodeConnected(host.nodeId);
 
     return {
@@ -443,7 +485,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
         status: nodeConnected ? 'CONNECTED' : 'RUNTIME_NODE_UNAVAILABLE',
         message: nodeConnected
           ? 'Runtime node connected. WebSocket stream ready.'
-          : 'Runtime node unavailable',
+          : getRuntimeUnavailableLocalizedMessage(locale),
         wsEndpoint: `/api/hosts/${host.id}/console/ws`,
       },
     };
@@ -454,6 +496,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     { websocket: true },
     async (socket, request) => {
       const { id } = request.params as { id: string };
+      const locale = resolveRequestLocale(request);
 
       try {
         const { auth, host, isOwner, grantedPermissions } = await requireHostPermission(
@@ -467,11 +510,12 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
         const agent = runtimeRegistry.getAgentOrNull(host.nodeId);
 
         if (!agent) {
+          const unavailableMsg = getRuntimeUnavailableLocalizedMessage(locale);
           socket.send(
             JSON.stringify({
               type: 'status',
               state: 'RUNTIME_NODE_UNAVAILABLE',
-              message: 'Runtime node unavailable',
+              message: unavailableMsg,
               timestamp: new Date().toISOString(),
             })
           );
@@ -481,7 +525,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
               JSON.stringify({
                 type: 'status',
                 state: 'RUNTIME_NODE_UNAVAILABLE',
-                message: 'Runtime node unavailable',
+                message: unavailableMsg,
                 timestamp: new Date().toISOString(),
               })
             );
@@ -573,7 +617,10 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('INVALID_PATH', 'Path traversal is prohibited.', 400);
     }
 
-    const agent = runtimeRegistry.requireConnectedAgent(host.nodeId);
+    const agent = runtimeRegistry.requireConnectedAgent(
+      host.nodeId,
+      resolveRequestLocale(request)
+    );
     const entries = await agent.fileManager.listDirectory(host.id, targetPath);
 
     return {
@@ -592,7 +639,10 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       body.action === 'list' || body.action === 'read' ? 'files.read' : 'files.write';
 
     const { auth, host } = await requireHostPermission(request, id, requiredScope);
-    const agent = runtimeRegistry.requireConnectedAgent(host.nodeId);
+    const agent = runtimeRegistry.requireConnectedAgent(
+      host.nodeId,
+      resolveRequestLocale(request)
+    );
 
     if (body.action === 'list') {
       const entries = await agent.fileManager.listDirectory(host.id, body.path);
@@ -1016,7 +1066,10 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     );
 
     // Strictly require a live connected Runtime Node; throws 503 RUNTIME_NODE_UNAVAILABLE if offline
-    const agent = runtimeRegistry.requireConnectedAgent(host.nodeId);
+    const agent = runtimeRegistry.requireConnectedAgent(
+      host.nodeId,
+      resolveRequestLocale(request)
+    );
     const prisma = getPrismaOrThrow();
 
     const [environments, allocations] = await Promise.all([
@@ -1146,7 +1199,10 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     const body = CreateDatabaseSchema.parse(request.body);
 
     // Provisioning a real database requires a connected Runtime Node DatabaseProvisioner
-    const agent = runtimeRegistry.requireConnectedAgent(host.nodeId);
+    const agent = runtimeRegistry.requireConnectedAgent(
+      host.nodeId,
+      resolveRequestLocale(request)
+    );
     const prisma = getPrismaOrThrow();
 
     const dbName = `hh_${host.id.slice(-6)}_${body.name}`;
@@ -1385,7 +1441,10 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     const { auth, host } = await requireHostPermission(request, id, 'backups.write');
     const body = CreateBackupSchema.parse(request.body);
 
-    const agent = runtimeRegistry.requireConnectedAgent(host.nodeId);
+    const agent = runtimeRegistry.requireConnectedAgent(
+      host.nodeId,
+      resolveRequestLocale(request)
+    );
     const prisma = getPrismaOrThrow();
 
     const pendingBackup = await prisma.backup.create({
@@ -1440,7 +1499,10 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/hosts/:id/backups/:backupId/restore', async (request) => {
     const { id, backupId } = request.params as { id: string; backupId: string };
     const { auth, host } = await requireHostPermission(request, id, 'backups.write');
-    const agent = runtimeRegistry.requireConnectedAgent(host.nodeId);
+    const agent = runtimeRegistry.requireConnectedAgent(
+      host.nodeId,
+      resolveRequestLocale(request)
+    );
     const prisma = getPrismaOrThrow();
 
     const backup = await prisma.backup.findFirst({

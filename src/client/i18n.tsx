@@ -155,7 +155,7 @@ const dictionary = {
     clearConsole: 'مسح السجل',
     reconnect: 'إعادة الاتصال',
     consoleUnavailableDesc:
-      'لا توجد عقدة تشغيل متصلة حالياً لبث مخرجات stdout/stderr لهذه الاستضافة (Runtime unavailable).',
+      'لا توجد عقدة تشغيل متاحة حاليًا. ستبدأ الاستضافة بعد توفر عقدة تشغيل.',
     stdinPlaceholderConnected: 'أرسل أمراً إلى حاوية التشغيل (stdin)...',
     stdinPlaceholderDisconnected: 'بيئة التشغيل غير متاحة — الإدخال معطّل',
     sendBtn: 'إرسال',
@@ -305,6 +305,32 @@ const dictionary = {
     adminPrevPage: 'السابق',
     adminNextPage: 'التالي',
     adminRecordDetailsTitle: 'تفاصيل السجل من PostgreSQL',
+    // Required Phase 1 Localization Keys (Runtime Node, Host, Discord, Console)
+    'runtime.node.unavailable':
+      'لا توجد عقدة تشغيل متاحة حاليًا. ستبدأ الاستضافة بعد توفر عقدة تشغيل.',
+    'runtime.node.connecting': 'جارٍ الاتصال بعقدة التشغيل...',
+    'runtime.node.online': 'عقدة التشغيل متصلة (ONLINE)',
+    'runtime.node.offline': 'عقدة التشغيل غير متصلة (OFFLINE)',
+    'runtime.node.degraded': 'أداء عقدة التشغيل منخفض (DEGRADED)',
+    'runtime.host.pending': 'بانتظار عقدة تشغيل (PENDING)',
+    'runtime.host.starting': 'جارٍ تشغيل الاستضافة (STARTING)',
+    'runtime.host.running': 'قيد التشغيل (RUNNING)',
+    'runtime.host.stopped': 'متوقفة (STOPPED)',
+    'runtime.host.error': 'خطأ في التشغيل (ERROR)',
+    'discord.login.title': '🔐 تم تسجيل الدخول بنجاح إلى HyperHost',
+    'discord.login.success':
+      'تم تسجيل الدخول بنجاح وإرسال إشعار أمني إلى رسائل Discord الخاصة بك.',
+    'discord.host.created.title': '🚀 تم إنشاء استضافتك في HyperHost',
+    'discord.host.created.success':
+      'تم إنشاء الاستضافة بنجاح وإرسال تفاصيلها إلى رسائل Discord الخاصة بك.',
+    'discord.notification.failed':
+      'تعذّر إرسال إشعار Discord عبر الرسائل الخاصة (تحقق من إعدادات الخصوصية أو توكن البوت).',
+    'console.connecting': 'جارٍ الاتصال بالطرفية...',
+    'console.connected': 'متصل بعقدة التشغيل',
+    'console.disconnected': 'غير متصل بالطرفية',
+    'console.runtimeUnavailable': 'عقدة التشغيل غير متاحة حالياً (RUNTIME_NODE_UNAVAILABLE)',
+    'console.waitingForNode':
+      'لا توجد عقدة تشغيل متاحة حاليًا. ستبدأ الاستضافة بعد توفر عقدة تشغيل.',
   },
   'en-US': {
     localeCode: 'en-US' as SupportedLocale,
@@ -449,7 +475,7 @@ const dictionary = {
     clearConsole: 'Clear Console',
     reconnect: 'Reconnect',
     consoleUnavailableDesc:
-      'No Runtime Node agent is currently connected to stream stdout/stderr for this Host (Runtime unavailable).',
+      'No runtime node is currently available. The host will start when a runtime node becomes available.',
     stdinPlaceholderConnected: 'Send command to container stdin...',
     stdinPlaceholderDisconnected: 'Runtime unavailable — stdin disabled',
     sendBtn: 'Send',
@@ -599,6 +625,32 @@ const dictionary = {
     adminPrevPage: 'Previous',
     adminNextPage: 'Next',
     adminRecordDetailsTitle: 'PostgreSQL Record Details',
+    // Required Phase 1 Localization Keys (Runtime Node, Host, Discord, Console)
+    'runtime.node.unavailable':
+      'No runtime node is currently available. The host will start when a runtime node becomes available.',
+    'runtime.node.connecting': 'Connecting to Runtime Node...',
+    'runtime.node.online': 'Runtime Node Online (ONLINE)',
+    'runtime.node.offline': 'Runtime Node Offline (OFFLINE)',
+    'runtime.node.degraded': 'Runtime Node Degraded (DEGRADED)',
+    'runtime.host.pending': 'Pending Runtime Node (PENDING)',
+    'runtime.host.starting': 'Starting Host (STARTING)',
+    'runtime.host.running': 'Running (RUNNING)',
+    'runtime.host.stopped': 'Stopped (STOPPED)',
+    'runtime.host.error': 'Runtime Error (ERROR)',
+    'discord.login.title': '🔐 HyperHost Login Successful',
+    'discord.login.success':
+      'Signed in successfully and delivered a security notification to your Discord DMs.',
+    'discord.host.created.title': '🚀 HyperHost Host Created',
+    'discord.host.created.success':
+      'Host created successfully and details sent to your Discord DMs.',
+    'discord.notification.failed':
+      'Could not deliver Discord DM notification (verify DM privacy settings or bot token).',
+    'console.connecting': 'Connecting to console...',
+    'console.connected': 'Connected to Runtime Node',
+    'console.disconnected': 'Console disconnected',
+    'console.runtimeUnavailable': 'Runtime Node Unavailable (RUNTIME_NODE_UNAVAILABLE)',
+    'console.waitingForNode':
+      'No runtime node is currently available. The host will start when a runtime node becomes available.',
   },
 };
 

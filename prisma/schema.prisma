@@ -36,10 +36,13 @@ enum HostRuntime {
 }
 
 enum HostStatus {
+  CREATING
   PENDING
   INSTALLING
   OFFLINE
+  STOPPED
   STARTING
+  RUNNING
   ONLINE
   STOPPING
   SUSPENDED
@@ -49,6 +52,8 @@ enum HostStatus {
 enum NodeStatus {
   ONLINE
   OFFLINE
+  DEGRADED
+  DRAINING
   MAINTENANCE
 }
 

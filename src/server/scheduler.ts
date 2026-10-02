@@ -1,5 +1,5 @@
 import { checkDatabaseHealth, getPrismaOrThrow } from './database';
-import { runtimeRegistry } from '../runtime/registry';
+import { NODE_HEARTBEAT_TIMEOUT_MS, runtimeRegistry } from '../runtime/registry';
 import { logger } from './logger';
 
 export class ControlPlaneScheduler {
@@ -33,6 +33,23 @@ export class ControlPlaneScheduler {
 
       const prisma = getPrismaOrThrow();
       const now = new Date();
+      const staleThreshold = new Date(now.getTime() - NODE_HEARTBEAT_TIMEOUT_MS);
+
+      // Mark any Node whose heartbeat expired as OFFLINE
+      await prisma.node.updateMany({
+        where: {
+          isOnline: true,
+          status: { in: ['ONLINE', 'DEGRADED'] },
+          OR: [
+            { lastHeartbeatAt: null },
+            { lastHeartbeatAt: { lt: staleThreshold } },
+          ],
+        },
+        data: {
+          isOnline: false,
+          status: 'OFFLINE',
+        },
+      });
 
       const dueSchedules = await prisma.schedule.findMany({
         where: {
@@ -61,7 +78,11 @@ export class ControlPlaneScheduler {
           continue;
         }
 
-        if (schedule.onlyWhenOnline && schedule.host.status !== 'ONLINE') {
+        if (
+          schedule.onlyWhenOnline &&
+          schedule.host.status !== 'ONLINE' &&
+          schedule.host.status !== 'RUNNING'
+        ) {
           await prisma.schedule.update({
             where: { id: schedule.id },
             data: {

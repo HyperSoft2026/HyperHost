@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { checkDatabaseHealth, getPrismaOrThrow } from '../database';
 import {
   config,
+  getEnvironmentDiagnosticsSummary,
   isDiscordLoginNotificationConfigured,
   isDiscordOAuthConfigured,
 } from '../config';
@@ -23,6 +24,7 @@ export async function registerHealthRoutes(app: FastifyInstance): Promise<void> 
     }
 
     const connectedNodes = runtimeRegistry.getConnectedNodeCount();
+    const envDiagnostics = getEnvironmentDiagnosticsSummary();
 
     const payload: HealthReportDTO = {
       status: dbHealth.connected ? 'healthy' : 'degraded',
@@ -46,6 +48,9 @@ export async function registerHealthRoutes(app: FastifyInstance): Promise<void> 
       },
       limits: {
         maxHostsPerUser: MAX_HOSTS_PER_USER,
+      },
+      diagnostics: {
+        env: { ...envDiagnostics },
       },
       timestamp: new Date().toISOString(),
     };

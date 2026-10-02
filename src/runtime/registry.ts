@@ -3,8 +3,26 @@ import type {
   RuntimeAdapter,
   ContainerResourceSpec,
 } from './interfaces';
-import { RUNTIME_CATALOG, type HostRuntimeCode } from '../shared/types';
+import {
+  normalizeLocale,
+  RUNTIME_CATALOG,
+  type HostRuntimeCode,
+  type NodeStatusCode,
+  type SupportedLocale,
+} from '../shared/types';
 import { AppError } from '../server/errors';
+
+export const NODE_HEARTBEAT_TIMEOUT_MS = 60_000;
+
+export function getRuntimeUnavailableLocalizedMessage(
+  localeInput?: SupportedLocale | string | null
+): string {
+  const locale = normalizeLocale(localeInput);
+  if (locale === 'en-US') {
+    return 'No runtime node is currently available. The host will start when a runtime node becomes available.';
+  }
+  return 'لا توجد عقدة تشغيل متاحة حاليًا. ستبدأ الاستضافة بعد توفر عقدة تشغيل.';
+}
 
 class StandardRuntimeAdapter implements RuntimeAdapter {
   constructor(public readonly runtime: HostRuntimeCode) {}
@@ -49,37 +67,103 @@ export class RuntimeNodeRegistry {
   }
 
   public unregisterAgent(nodeId: string): void {
-    this.connectedAgents.delete(nodeId);
+    const existing = this.connectedAgents.get(nodeId);
+    if (existing) {
+      this.connectedAgents.delete(nodeId);
+    }
   }
 
+  /**
+   * A Node is ONLY considered connected if it completed registration, authentication,
+   * capability handshake, and has a fresh heartbeat within NODE_HEARTBEAT_TIMEOUT_MS.
+   */
   public isNodeConnected(nodeId: string | null | undefined): boolean {
     if (!nodeId) return false;
     const agent = this.connectedAgents.get(nodeId);
-    return Boolean(agent && agent.isConnected);
+    if (!agent || !agent.isConnected || !agent.handshakeCompleted) {
+      return false;
+    }
+    if (!agent.lastHeartbeatAt) {
+      return false;
+    }
+    const ageMs = Date.now() - agent.lastHeartbeatAt.getTime();
+    if (ageMs > NODE_HEARTBEAT_TIMEOUT_MS) {
+      return false;
+    }
+    return agent.status === 'ONLINE' || agent.status === 'DEGRADED';
+  }
+
+  public getNodeEffectiveStatus(
+    nodeId: string | null | undefined,
+    dbStatus: NodeStatusCode = 'OFFLINE'
+  ): NodeStatusCode {
+    if (dbStatus === 'MAINTENANCE' || dbStatus === 'DRAINING') {
+      return dbStatus;
+    }
+    if (!nodeId) return 'OFFLINE';
+    const agent = this.connectedAgents.get(nodeId);
+    if (!agent || !this.isNodeConnected(nodeId)) {
+      return 'OFFLINE';
+    }
+    return agent.status;
   }
 
   public getConnectedNodeCount(): number {
     let count = 0;
-    for (const agent of this.connectedAgents.values()) {
-      if (agent.isConnected) count++;
+    for (const nodeId of this.connectedAgents.keys()) {
+      if (this.isNodeConnected(nodeId)) {
+        count++;
+      }
     }
     return count;
   }
 
-  public getAgentOrNull(nodeId: string | null | undefined): NodeAgent | null {
-    if (!nodeId) return null;
-    const agent = this.connectedAgents.get(nodeId);
-    if (!agent || !agent.isConnected) return null;
-    return agent;
+  public getConnectedAgents(): NodeAgent[] {
+    const list: NodeAgent[] = [];
+    for (const [nodeId, agent] of this.connectedAgents.entries()) {
+      if (this.isNodeConnected(nodeId)) {
+        list.push(agent);
+      }
+    }
+    return list;
   }
 
-  public requireConnectedAgent(nodeId: string | null | undefined): NodeAgent {
+  /**
+   * Selects an authenticated, ONLINE (not DRAINING/MAINTENANCE) Runtime Node
+   * that supports the requested runtime. Returns null if no live Node is available.
+   */
+  public selectOptimalConnectedNode(runtime: HostRuntimeCode): NodeAgent | null {
+    for (const agent of this.getConnectedAgents()) {
+      if (
+        agent.status === 'ONLINE' &&
+        agent.capabilities.supportedRuntimes.includes(runtime)
+      ) {
+        return agent;
+      }
+    }
+    return null;
+  }
+
+  public getAgentOrNull(nodeId: string | null | undefined): NodeAgent | null {
+    if (!nodeId) return null;
+    if (!this.isNodeConnected(nodeId)) return null;
+    return this.connectedAgents.get(nodeId) ?? null;
+  }
+
+  public requireConnectedAgent(
+    nodeId: string | null | undefined,
+    locale?: SupportedLocale | string | null
+  ): NodeAgent {
     const agent = this.getAgentOrNull(nodeId);
     if (!agent) {
       throw new AppError(
         'RUNTIME_NODE_UNAVAILABLE',
-        'No runtime node is currently available.',
-        503
+        getRuntimeUnavailableLocalizedMessage(locale),
+        503,
+        {
+          reason: 'RUNTIME_NODE_UNAVAILABLE',
+          nodeId: nodeId ?? null,
+        }
       );
     }
     return agent;

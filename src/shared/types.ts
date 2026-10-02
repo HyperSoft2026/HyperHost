@@ -67,14 +67,24 @@ export type HostRuntimeCode =
   | 'CPP';
 
 export type HostStatusCode =
+  | 'CREATING'
   | 'PENDING'
   | 'INSTALLING'
   | 'OFFLINE'
+  | 'STOPPED'
   | 'STARTING'
+  | 'RUNNING'
   | 'ONLINE'
   | 'STOPPING'
   | 'SUSPENDED'
   | 'ERROR';
+
+export type NodeStatusCode =
+  | 'ONLINE'
+  | 'OFFLINE'
+  | 'DEGRADED'
+  | 'DRAINING'
+  | 'MAINTENANCE';
 
 export interface RuntimeCatalogItem {
   code: HostRuntimeCode;
@@ -247,6 +257,9 @@ export interface HealthReportDTO {
   };
   limits: {
     maxHostsPerUser: number;
+  };
+  diagnostics?: {
+    env: Record<string, 'configured' | 'missing'>;
   };
   timestamp: string;
 }

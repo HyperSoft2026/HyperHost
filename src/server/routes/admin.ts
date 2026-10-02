@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { recordActivityLog, requireAdmin } from '../auth';
-import { getPrismaOrThrow } from '../database';
+import { getEnvironmentDiagnosticsSummary } from '../config';
+import { checkDatabaseHealth, getPrismaOrThrow } from '../database';
+import { probeDiscordBotApiHealth } from '../discord-notify';
 import { generateSecureToken, hashToken } from '../crypto';
 import { AppError } from '../errors';
 import { runtimeRegistry } from '../../runtime/registry';
@@ -96,23 +98,31 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           sessions: activeSessionsCount,
           activity: activityCount,
         },
-        nodes: nodes.map((n) => ({
-          id: n.id,
-          publicId: formatEntityPublicId('nod', n.id),
-          name: n.name,
-          location: n.location,
-          fqdn: n.fqdn,
-          ipAddress: n.ipAddress,
-          daemonPort: n.daemonPort,
-          status: n.status,
-          liveConnected: runtimeRegistry.isNodeConnected(n.id),
-          maxMemoryMb: n.maxMemoryMb,
-          maxDiskMb: n.maxDiskMb,
-          maxCpuPercent: n.maxCpuPercent,
-          lastHeartbeatAt: n.lastHeartbeatAt ? n.lastHeartbeatAt.toISOString() : null,
-          counts: n._count,
-          createdAt: n.createdAt.toISOString(),
-        })),
+        nodes: nodes.map((n) => {
+          const agent = runtimeRegistry.getAgentOrNull(n.id);
+          return {
+            id: n.id,
+            publicId: formatEntityPublicId('nod', n.id),
+            name: n.name,
+            location: n.location,
+            fqdn: n.fqdn,
+            ipAddress: n.ipAddress,
+            daemonPort: n.daemonPort,
+            status: runtimeRegistry.getNodeEffectiveStatus(n.id, n.status),
+            liveConnected: runtimeRegistry.isNodeConnected(n.id),
+            capabilities: agent?.capabilities ?? null,
+            resources: agent?.resources ?? null,
+            maxMemoryMb: n.maxMemoryMb,
+            maxDiskMb: n.maxDiskMb,
+            maxCpuPercent: n.maxCpuPercent,
+            lastHeartbeatAt: n.lastHeartbeatAt ? n.lastHeartbeatAt.toISOString() : null,
+            counts: n._count,
+            createdAt: n.createdAt.toISOString(),
+          };
+        }),
+        diagnostics: {
+          env: getEnvironmentDiagnosticsSummary(),
+        },
         recentActivity: recentActivity.map((log) => ({
           id: log.id,
           publicId: formatEntityPublicId('act', log.id),
@@ -130,6 +140,36 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           metadata: log.metadata,
           createdAt: log.createdAt.toISOString(),
         })),
+      },
+    };
+  });
+
+  // Safe Production Environment & Discord Bot API Diagnostics (never exposes secret values)
+  app.get('/api/admin/diagnostics', async (request) => {
+    await requireAdmin(request);
+    const [dbHealth, discordBotHealth] = await Promise.all([
+      checkDatabaseHealth(),
+      probeDiscordBotApiHealth(),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        environmentVariables: getEnvironmentDiagnosticsSummary(),
+        database: dbHealth,
+        discordBot: discordBotHealth,
+        runtimeNodes: {
+          connectedCount: runtimeRegistry.getConnectedNodeCount(),
+          connectedNodes: runtimeRegistry.getConnectedAgents().map((a) => ({
+            nodeId: a.nodeId,
+            fqdn: a.fqdn,
+            status: a.status,
+            capabilities: a.capabilities,
+            resources: a.resources,
+            lastHeartbeatAt: a.lastHeartbeatAt?.toISOString() ?? null,
+          })),
+        },
+        timestamp: new Date().toISOString(),
       },
     };
   });

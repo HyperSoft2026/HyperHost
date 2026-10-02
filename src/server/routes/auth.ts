@@ -20,7 +20,10 @@ import {
 } from '../crypto';
 import { checkDatabaseHealth, getPrismaOrThrow } from '../database';
 import { AppError } from '../errors';
-import { sendDiscordLoginNotification } from '../discord-notify';
+import {
+  sendDiscordLoginNotification,
+  type DiscordDmDeliveryResult,
+} from '../discord-notify';
 import {
   MAX_HOSTS_PER_USER,
   normalizeLocale,
@@ -35,7 +38,7 @@ const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 // Idempotent callback guard to prevent duplicate OAuth code processing on double-requests
 const completedOAuthStates = new Map<
   string,
-  { rawSessionToken: string; timestamp: number }
+  { rawSessionToken: string; timestamp: number; dmResult: DiscordDmDeliveryResult }
 >();
 
 function createSignedOAuthState(locale: SupportedLocale): string {
@@ -113,21 +116,35 @@ function buildDiscordAuthorizeUrl(state: string, redirectUri: string): string {
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
 
-function buildCallbackSuccessHtml(reply: FastifyReply): void {
+function buildCallbackSuccessHtml(
+  reply: FastifyReply,
+  dmResult: DiscordDmDeliveryResult
+): void {
+  const dmStatus = dmResult.ok ? 'sent' : 'failed';
+  const dmReason = dmResult.ok ? '' : dmResult.reason;
+  const redirectUrl = `/?login=discord_success&dm=${dmStatus}${
+    dmReason ? `&dm_reason=${encodeURIComponent(dmReason)}` : ''
+  }`;
+  const safePostMessageJson = JSON.stringify({
+    type: 'OAUTH_AUTH_SUCCESS',
+    dmSent: dmResult.ok,
+    dmReason: dmResult.ok ? null : dmResult.reason,
+  });
+
   reply.type('text/html').send(`<!DOCTYPE html>
 <html lang="ar-IQ">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="refresh" content="1;url=/?login=discord_success" />
+    <meta http-equiv="refresh" content="1;url=${redirectUrl}" />
     <title>HyperHost Authentication</title>
   </head>
   <body style="background:#090A10;color:#F8FAFC;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
     <script>
       if (window.opener) {
-        window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', loginNotification: true }, '*');
+        window.opener.postMessage(${safePostMessageJson}, '*');
         window.close();
       } else {
-        window.location.replace('/?login=discord_success');
+        window.location.replace(${JSON.stringify(redirectUrl)});
       }
     </script>
     <p>Authentication complete. Redirecting to HyperHost...</p>
@@ -266,7 +283,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         existingCompleted.rawSessionToken,
         getSessionCookieOptions(request)
       );
-      buildCallbackSuccessHtml(reply);
+      buildCallbackSuccessHtml(reply, existingCompleted.dmResult);
       return;
     }
 
@@ -422,9 +439,24 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       },
     });
 
+    const userPublicId = formatEntityPublicId('usr', user.id, user.publicId);
+
+    // Dispatch single, fail-safe Discord Login DM Notification and capture real delivery status
+    const dmResult = await sendDiscordLoginNotification({
+      callbackKey: stateHash,
+      discordId: user.discordId,
+      username: user.username,
+      displayName: user.displayName,
+      userPublicId,
+      ipAddress,
+      locale: activeLocale,
+      timestamp: new Date(),
+    });
+
     completedOAuthStates.set(stateHash, {
       rawSessionToken,
       timestamp: Date.now(),
+      dmResult,
     });
 
     await recordActivityLog({
@@ -436,18 +468,10 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         discordId: user.discordId,
         username: user.username,
         isNewUser,
+        discordLoginDmSent: dmResult.ok,
+        discordLoginDmReason: dmResult.ok ? null : dmResult.reason,
       },
       request,
-    });
-
-    // Dispatch single, non-blocking, fail-safe Discord Login DM Notification in user's locale
-    void sendDiscordLoginNotification({
-      callbackKey: stateHash,
-      discordId: user.discordId,
-      username: user.username,
-      userPublicId: formatEntityPublicId('usr', user.id, user.publicId),
-      locale: activeLocale,
-      timestamp: new Date(),
     });
 
     reply.clearCookie(OAUTH_STATE_COOKIE, getSessionCookieOptions(request));
@@ -458,7 +482,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       getSessionCookieOptions(request)
     );
 
-    buildCallbackSuccessHtml(reply);
+    buildCallbackSuccessHtml(reply, dmResult);
   };
 
   app.get('/api/auth/discord/callback', handleCallback);

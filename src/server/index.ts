@@ -7,7 +7,7 @@ import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import { config } from './config';
+import { config, getEnvironmentDiagnosticsSummary } from './config';
 import { globalErrorHandler } from './errors';
 import { logger } from './logger';
 import { disconnectDatabase, initializeDatabase } from './database';
@@ -17,6 +17,7 @@ import { registerAuthRoutes } from './routes/auth';
 import { registerUserRoutes } from './routes/users';
 import { registerHostRoutes } from './routes/hosts';
 import { registerAdminRoutes } from './routes/admin';
+import { registerRuntimeNodeRoutes } from './routes/runtime-nodes';
 
 async function bootstrapControlPlane() {
   const app = Fastify({
@@ -25,6 +26,10 @@ async function bootstrapControlPlane() {
   });
 
   app.setErrorHandler(globalErrorHandler);
+
+  logger.info('HyperHost environment configuration audit', {
+    ...getEnvironmentDiagnosticsSummary(),
+  });
 
   if (!config.sessionSecretConfigured) {
     logger.warn(
@@ -90,6 +95,7 @@ async function bootstrapControlPlane() {
   await registerUserRoutes(app);
   await registerHostRoutes(app);
   await registerAdminRoutes(app);
+  await registerRuntimeNodeRoutes(app);
 
   const distDir = path.resolve(process.cwd(), 'dist');
   const distIndexPath = path.join(distDir, 'index.html');

@@ -109,6 +109,38 @@ export function isDiscordLoginNotificationConfigured(): boolean {
   return Boolean(config.discord.botToken);
 }
 
+export interface EnvironmentDiagnosticsSummary {
+  DATABASE_URL: 'configured' | 'missing';
+  DISCORD_CLIENT_ID: 'configured' | 'missing';
+  DISCORD_CLIENT_SECRET: 'configured' | 'missing';
+  DISCORD_REDIRECT_URI: 'configured' | 'missing';
+  DISCORD_BOT_TOKEN: 'configured' | 'missing';
+  PUBLIC_URL: 'configured' | 'missing';
+  SESSION_SECRET: 'configured' | 'missing';
+  PORT: 'configured' | 'missing';
+  NODE_ENV: 'configured' | 'missing';
+}
+
+export function getEnvironmentDiagnosticsSummary(): EnvironmentDiagnosticsSummary {
+  const hasPublicUrlEnv = Boolean(
+    process.env.PUBLIC_URL?.trim() ||
+      process.env.APP_URL?.trim() ||
+      process.env.BASE_URL?.trim()
+  );
+  return {
+    DATABASE_URL: config.databaseUrl ? 'configured' : 'missing',
+    DISCORD_CLIENT_ID: config.discord.clientId ? 'configured' : 'missing',
+    DISCORD_CLIENT_SECRET: config.discord.clientSecret ? 'configured' : 'missing',
+    DISCORD_REDIRECT_URI: getDiscordRedirectUriOrNull() ? 'configured' : 'missing',
+    DISCORD_BOT_TOKEN: config.discord.botToken ? 'configured' : 'missing',
+    PUBLIC_URL: hasPublicUrlEnv ? 'configured' : 'missing',
+    SESSION_SECRET: config.sessionSecretConfigured ? 'configured' : 'missing',
+    PORT: process.env.PORT?.trim() ? 'configured' : 'missing',
+    NODE_ENV: process.env.NODE_ENV?.trim() ? 'configured' : 'missing',
+  };
+}
+
+
 export function getDiscordRedirectUriOrNull(): string | null {
   return config.discord.redirectUri || null;
 }
