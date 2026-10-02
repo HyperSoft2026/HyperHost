@@ -39,28 +39,82 @@ HyperHost enforces a strict separation between the **Control Plane** (authentica
 ## Architecture
 
 ```text
-+-----------------------------------------------------------------------+
-|                        HYPERHOST CONTROL PLANE                        |
-|  Fastify 5 + TypeScript + Prisma ORM + Zod + WebSocket + Scheduler    |
-|                                                                       |
-|  - Discord OAuth2 & Session Management                                |
-|  - Host & Node Metadata (PostgreSQL)                                  |
-|  - AES-256-GCM Secret Vault (HostEnvironment)                         |
-|  - 21-Scope Granular RBAC & Sanitized Activity Logs                   |
-+-----------------------------------+-----------------------------------+
-                                    |
-                    Mutual-Auth RPC / WebSocket Tunnel
-                                    |
-+-----------------------------------v-----------------------------------+
-|                         HYPERHOST RUNTIME PLANE                       |
-|       Remote Runtime Nodes (NodeAgent / ContainerManager / Docker)    |
-|                                                                       |
-|  - ProcessManager & ContainerManager (CPU / RAM / Disk quotas)        |
-|  - Live Console Streams (stdout / stderr / stdin)                     |
-|  - Isolated Volume FileManager & S3 BackupStorageAdapter              |
-|  - MetricsCollector & DatabaseProvisioner                             |
-+-----------------------------------------------------------------------+
+User
+ ↓
+Create Host (POST /api/hosts)
+ ↓
+HyperHost Control Plane (NodeProvisioner / RuntimeProvisioner)
+ ├── 1. Generates cryptographically secure per-Host Node credentials (NODE_ID + NODE_TOKEN)
+ ├── 2. Creates dedicated 1-to-1 Node record in PostgreSQL (stores HMAC-SHA256 agentTokenHash)
+ ├── 3. Requests dedicated Runtime Server from Infrastructure Provider (createServer)
+ ├── 4. Waits until Runtime Server is ready (waitUntilReady)
+ ├── 5. Bootstraps standalone Runtime Node Agent on the Server (bootstrapNode)
+ ↓
+Dedicated Runtime Server (1-to-1 per Host)
+ └── Runtime Node Agent (src/runtime/node-agent.ts)
+      ├── Connects via authenticated WebSocket (wss://CURRENT_HYPERHOST_DOMAIN/api/runtime/nodes/ws)
+      ├── Sends capability handshake (hello) & periodic 15s heartbeats
+      └── Spawns real Host process (child_process.spawn with shell: false)
 ```
+
+```text
+Host A ──► Runtime Server A ──► Node A ──► Host A Process
+Host B ──► Runtime Server B ──► Node B ──► Host B Process
+```
+
+---
+
+## Automatic Per-Host Runtime Provisioning (`NodeProvisioner`)
+
+HyperHost implements **Automatic Per-Host Runtime Provisioning** (`src/runtime/provisioner.ts` & `src/runtime/interfaces.ts`). Runtime Nodes are **never** added manually by admins or users, and users **never** interact with `NODE_ID` or `NODE_TOKEN`.
+
+### 1. `RuntimeProvisioner` Interface
+
+```ts
+export interface RuntimeProvisioner {
+  readonly providerName: string;
+  isConfigured(): boolean;
+  createServer(input: CreateRuntimeServerInput): Promise<ProvisionedServer>;
+  waitUntilReady(serverId: string): Promise<ProvisionedServer>;
+  bootstrapNode(input: BootstrapRuntimeNodeInput): Promise<void>;
+  destroyServer(serverId: string): Promise<void>;
+}
+```
+
+### 2. Per-Host Provisioning Lifecycle
+
+When a user creates a Host (`POST /api/hosts`), `runtimeProvisionerService.provisionHostRuntime(hostId)` orchestrates the following real lifecycle transitions:
+
+1. `PENDING` → Host record created in PostgreSQL.
+2. `PROVISIONING` → Dedicated 1-to-1 `Node` record created in PostgreSQL (`dedicatedHostId = host.id`) with a freshly generated token (`hhnode_<64-hex>`) hashed via HMAC-SHA256 (`agentTokenHash`), and `createServer()` + `waitUntilReady()` are invoked on the `RuntimeProvisioner`.
+3. `BOOTSTRAPPING` → `bootstrapNode()` injects `CONTROL_PLANE_WS_URL`, `NODE_ID`, `NODE_TOKEN`, and `HOST_ID` onto the new Runtime Server and starts the standalone Node Agent (`npm run start:node-agent`).
+4. `NODE_CONNECTING` → Control Plane waits for the dedicated Node Agent to establish its authenticated WebSocket connection (`/api/runtime/nodes/ws`).
+5. `NODE_ONLINE` → Dedicated Node completes its `hello` handshake and is verified `ONLINE`.
+6. `STARTING` → Control Plane dispatches workspace initialization and `process.start` to the dedicated Node Agent.
+7. `RUNNING` → Dedicated Node Agent spawns the real OS process (`child_process.spawn`) inside the Host's isolated workspace and confirms live execution.
+8. `STOPPED` / `ERROR` → Truthful terminal states when stopped by the user or if infrastructure provisioning / process execution fails.
+
+When a Host is deleted (`DELETE /api/hosts/:id`), `runtimeProvisionerService.destroyHostRuntime(hostId)` automatically stops the Host process, disconnects and deletes the dedicated `Node` record, and invokes `destroyServer(provisionedServerId)` on the Infrastructure Provider.
+
+### 3. External Infrastructure Provider Requirement (المتطلب الخارجي لتزويد السيرفرات تلقائيًا)
+
+Because Clever Cloud hosts the Web Control Plane and PostgreSQL database, provisioning a new dedicated Linux VM/Server per Host requires an external Cloud Infrastructure Provider API (e.g., Hetzner Cloud, DigitalOcean, or a Cloud Orchestrator API endpoint).
+
+Configure the following environment variables on the HyperHost Control Plane to enable live automatic server creation:
+
+```dotenv
+RUNTIME_PROVIDER=hetzner-cloud
+RUNTIME_PROVIDER_API_TOKEN=<cloud-provider-api-token>
+RUNTIME_PROVIDER_API_ENDPOINT=https://api.hetzner.cloud/v1
+RUNTIME_PROVIDER_REGION=eu-central
+RUNTIME_PROVIDER_IMAGE=ubuntu-24.04-hyperhost-runtime
+```
+
+If `RUNTIME_PROVIDER`, `RUNTIME_PROVIDER_API_TOKEN`, and `RUNTIME_PROVIDER_API_ENDPOINT` are **not** configured in the Control Plane environment:
+- HyperHost **never** creates fake nodes or fake servers, and **never** marks a Host as `RUNNING`.
+- `UnconfiguredRuntimeProvisioner` truthfully transitions the Host to `status = "ERROR"` (`provisioningStatus = "FAILED"`, `serverStatus = "ERROR"`) with:
+  `Unable to provision runtime server. Infrastructure provider is not configured.`
+- All runtime operations (`Console`, `Files`, `Metrics`, `Start`, `Restart`, `Backups`, `Databases`) continue to report `[RUNTIME_NODE_UNAVAILABLE]` until a real dedicated Runtime Server and Node Agent are provisioned and connected.
 
 ---
 

@@ -125,6 +125,7 @@ function buildCallbackSuccessHtml(
   const redirectUrl = `/?login=discord_success&dm=${dmStatus}${
     dmReason ? `&dm_reason=${encodeURIComponent(dmReason)}` : ''
   }`;
+  const htmlSafeRedirectUrl = redirectUrl.replace(/&/g, '&amp;');
   const safePostMessageJson = JSON.stringify({
     type: 'OAUTH_AUTH_SUCCESS',
     dmSent: dmResult.ok,
@@ -135,15 +136,22 @@ function buildCallbackSuccessHtml(
 <html lang="ar-IQ">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="refresh" content="1;url=${redirectUrl}" />
+    <meta http-equiv="refresh" content="1;url=${htmlSafeRedirectUrl}" />
     <title>HyperHost Authentication</title>
   </head>
   <body style="background:#090A10;color:#F8FAFC;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
     <script>
-      if (window.opener) {
-        window.opener.postMessage(${safePostMessageJson}, '*');
-        window.close();
-      } else {
+      try {
+        if (window.opener && window.opener !== window) {
+          window.opener.postMessage(${safePostMessageJson}, '*');
+          window.close();
+          setTimeout(function () {
+            window.location.replace(${JSON.stringify(redirectUrl)});
+          }, 350);
+        } else {
+          window.location.replace(${JSON.stringify(redirectUrl)});
+        }
+      } catch (e) {
         window.location.replace(${JSON.stringify(redirectUrl)});
       }
     </script>
@@ -521,9 +529,33 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const prisma = getPrismaOrThrow();
-    const hostCount = await prisma.host.count({
-      where: { ownerId: ctx.user.id },
-    });
+    const [hostCount, latestLoginLog] = await Promise.all([
+      prisma.host.count({
+        where: { ownerId: ctx.user.id },
+      }),
+      prisma.activityLog.findFirst({
+        where: {
+          userId: ctx.user.id,
+          action: {
+            contains: 'Discord OAuth2',
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const loginMeta = (latestLoginLog?.metadata as Record<string, unknown> | null) ?? null;
+    const lastLoginNotification = loginMeta
+      ? {
+          sent: loginMeta.discordLoginDmSent === true,
+          reason:
+            loginMeta.discordLoginDmSent === true
+              ? null
+              : typeof loginMeta.discordLoginDmReason === 'string'
+              ? loginMeta.discordLoginDmReason
+              : 'DISCORD_API_ERROR',
+        }
+      : null;
 
     return {
       success: true,
@@ -533,6 +565,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         loginNotificationConfigured: isDiscordLoginNotificationConfigured(),
         databaseConnected: true,
         csrfToken: ctx.session.csrfToken,
+        lastLoginNotification,
         user: {
           id: ctx.user.id,
           publicId: formatEntityPublicId('usr', ctx.user.id, ctx.user.publicId),

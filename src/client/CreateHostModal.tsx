@@ -40,7 +40,6 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
   const [type, setType] = useState<HostTypeCode>('DISCORD_BOT');
   const [runtime, setRuntime] = useState<HostRuntimeCode>('NODEJS');
   const [runtimeVersion, setRuntimeVersion] = useState('22');
-  const [nodeId, setNodeId] = useState<string>('');
   const [memoryLimitMb, setMemoryLimitMb] = useState<number>(512);
   const [cpuLimitPercent, setCpuLimitPercent] = useState<number>(100);
   const [diskLimitMb, setDiskLimitMb] = useState<number>(2048);
@@ -78,7 +77,7 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
           type,
           runtime,
           runtimeVersion,
-          nodeId: isAdmin && nodeId ? nodeId : null,
+          nodeId: null,
           memoryLimitMb: Number(memoryLimitMb),
           cpuLimitPercent: Number(cpuLimitPercent),
           diskLimitMb: Number(diskLimitMb),
@@ -227,26 +226,6 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
                 className="w-full px-3.5 py-2 text-sm bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
-
-            {isAdmin && (
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  {t.targetNodeLabel}
-                </label>
-                <select
-                  value={nodeId}
-                  onChange={(e) => setNodeId(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="">{t.unassignedNodeOption}</option>
-                  {availableNodes.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.name} ({n.location}) — {n.liveConnected ? 'ONLINE' : 'OFFLINE'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">

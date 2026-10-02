@@ -1,4 +1,35 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+
+function loadDotEnvFileIfPresent(): void {
+  try {
+    const envPath = path.resolve(process.cwd(), '.env');
+    if (!fs.existsSync(envPath)) return;
+    const raw = fs.readFileSync(envPath, 'utf-8');
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx <= 0) continue;
+      const key = trimmed.slice(0, eqIdx).trim();
+      let val = trimmed.slice(eqIdx + 1).trim();
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      if (process.env[key] === undefined && val !== '') {
+        process.env[key] = val;
+      }
+    }
+  } catch {
+    // Ignore .env read errors in restricted environments
+  }
+}
+
+loadDotEnvFileIfPresent();
 
 const DEFAULT_PUBLIC_APP_URL =
   'https://app-1cc68a22-3748-4fa2-95be-e02404cad0a6.cleverapps.io/';
@@ -28,6 +59,13 @@ export interface ServerConfig {
   publicUrl: string;
   corsOrigin: string;
   runtimeNodeSecret: string | undefined;
+  runtimeProvisioning: {
+    provider: string | undefined;
+    apiToken: string | undefined;
+    apiEndpoint: string | undefined;
+    region: string | undefined;
+    image: string | undefined;
+  };
 }
 
 const isProdFlag = process.argv.includes('--production');
@@ -42,8 +80,18 @@ const envSessionSecret = process.env.SESSION_SECRET?.trim();
 const envEncryptionKey = process.env.ENCRYPTION_KEY?.trim();
 const envRuntimeNodeSecret =
   process.env.RUNTIME_NODE_SECRET?.trim() ||
+  process.env.NODE_ENROLLMENT_SECRET?.trim() ||
   process.env.NODE_TOKEN?.trim() ||
   undefined;
+const envRuntimeProvider = process.env.RUNTIME_PROVIDER?.trim() || undefined;
+const envRuntimeProviderToken =
+  process.env.RUNTIME_PROVIDER_API_TOKEN?.trim() || undefined;
+const envRuntimeProviderEndpoint =
+  process.env.RUNTIME_PROVIDER_API_ENDPOINT?.trim() || undefined;
+const envRuntimeProviderRegion =
+  process.env.RUNTIME_PROVIDER_REGION?.trim() || undefined;
+const envRuntimeProviderImage =
+  process.env.RUNTIME_PROVIDER_IMAGE?.trim() || undefined;
 
 const rawAdminIds = (process.env.ADMIN_DISCORD_IDS || '')
   .split(',')
@@ -114,6 +162,13 @@ export const config: ServerConfig = {
   publicUrl: resolvedPublicUrl,
   corsOrigin: process.env.CORS_ORIGIN?.trim() || '*',
   runtimeNodeSecret: envRuntimeNodeSecret,
+  runtimeProvisioning: {
+    provider: envRuntimeProvider,
+    apiToken: envRuntimeProviderToken,
+    apiEndpoint: envRuntimeProviderEndpoint,
+    region: envRuntimeProviderRegion,
+    image: envRuntimeProviderImage,
+  },
 };
 
 export function isDiscordOAuthConfigured(): boolean {

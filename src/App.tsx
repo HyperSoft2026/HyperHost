@@ -85,10 +85,36 @@ export default function App() {
   useEffect(() => {
     const onPopState = () => {
       setPathname(normalizePathname(window.location.pathname));
+      setMobileMenuOpen(false);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
+
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMobileMenuOpen(false);
+      }
+    };
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -146,6 +172,26 @@ export default function App() {
     }
   }, [pathname]);
 
+  // Poll dashboard while any Host is in an active provisioning lifecycle state
+  useEffect(() => {
+    if (!authenticated) return;
+    const hasProvisioningHost = hosts.some((h) =>
+      [
+        'PENDING',
+        'PROVISIONING',
+        'BOOTSTRAPPING',
+        'NODE_CONNECTING',
+        'NODE_ONLINE',
+        'STARTING',
+      ].includes(h.status)
+    );
+    if (!hasProvisioningHost) return;
+    const timer = window.setInterval(() => {
+      void loadHostsDashboard();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [authenticated, hosts]);
+
   async function bootstrapApp(justLoggedIn = false) {
     setInitializing(true);
     try {
@@ -154,6 +200,10 @@ export default function App() {
         apiFetch<{
           authenticated: boolean;
           user: AuthenticatedUserDTO | null;
+          lastLoginNotification?: {
+            sent: boolean;
+            reason: string | null;
+          } | null;
         }>('/api/auth/me').catch(() => null),
       ]);
 
@@ -162,6 +212,14 @@ export default function App() {
       if (authRes?.authenticated && authRes.user) {
         setAuthenticated(true);
         setUser(authRes.user);
+        if (justLoggedIn && authRes.lastLoginNotification) {
+          setLoginDmState({
+            sent: Boolean(authRes.lastLoginNotification.sent),
+            reason: authRes.lastLoginNotification.sent
+              ? null
+              : authRes.lastLoginNotification.reason || 'DISCORD_API_ERROR',
+          });
+        }
         await loadHostsDashboard();
         if (justLoggedIn && normalizePathname(window.location.pathname) === '/') {
           navigateTo('/dashboard', true);
@@ -251,7 +309,7 @@ export default function App() {
 
   const totalHostsCount = hosts.length;
   const onlineHostsCount = hosts.filter(
-    (h) => h.status === 'ONLINE' && h.nodeOnline
+    (h) => (h.status === 'RUNNING' || h.status === 'ONLINE') && h.nodeOnline
   ).length;
   const offlineHostsCount = totalHostsCount - onlineHostsCount;
   const totalAllocatedMemoryMb = hosts.reduce(
@@ -410,52 +468,57 @@ export default function App() {
       </aside>
 
       {/* Mobile Top Navbar */}
-      <div className="lg:hidden sticky top-0 z-40 flex items-center justify-between px-4 py-3 bg-[#0C0E1A]/95 backdrop-blur-md border-b border-slate-800">
+      <header className="lg:hidden sticky top-0 z-[60] h-16 flex items-center justify-between px-4 bg-[#0C0E1A]/95 backdrop-blur-md border-b border-slate-800">
         <a
           href="/"
           onClick={(e) => {
             e.preventDefault();
             navigateTo('/');
           }}
+          className="shrink-0"
         >
           <LogoMark size="sm" />
         </a>
-        <div className="flex items-center gap-2">
-          <LanguageSwitcher compact />
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
             aria-label={mobileMenuOpen ? t.closeMenuAria : t.openMenuAria}
-            className="min-h-[40px] min-w-[40px] p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 inline-flex items-center justify-center cursor-pointer"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="workspace-mobile-drawer"
+            className="relative z-20 shrink-0 pointer-events-auto touch-manipulation min-h-[40px] min-w-[40px] p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 inline-flex items-center justify-center cursor-pointer focus-visible:outline-2 focus-visible:outline-violet-500"
           >
             {mobileMenuOpen ? (
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5 pointer-events-none" />
             ) : (
-              <Menu className="w-5 h-5" />
+              <Menu className="w-5 h-5 pointer-events-none" />
             )}
           </button>
         </div>
-      </div>
+      </header>
 
       {/* Mobile Drawer in Workspace */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-50 lg:hidden flex"
+          id="workspace-mobile-drawer"
+          className="fixed inset-x-0 top-16 bottom-0 z-50 lg:hidden flex"
           role="dialog"
           aria-modal="true"
+          aria-label="Mobile Navigation Menu"
         >
           <div
-            className="fixed inset-0 bg-black/75 backdrop-blur-xs"
+            className="fixed inset-x-0 top-16 bottom-0 bg-black/75 backdrop-blur-xs"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <div className="relative z-10 w-80 max-w-[85vw] bg-[#0D0F1B] border-e border-slate-800 h-full flex flex-col justify-between p-5 overflow-y-auto ms-auto">
+          <div className="relative z-10 w-80 max-w-[85vw] bg-[#0D0F1B] border-s border-slate-800 h-full flex flex-col justify-between p-5 overflow-y-auto ms-auto">
             <div className="space-y-5">
               <div className="flex items-center justify-between pb-4 border-b border-slate-800">
                 <LogoMark size="sm" />
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-300"
+                  aria-label={t.closeMenuAria}
+                  className="min-h-[40px] min-w-[40px] p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white inline-flex items-center justify-center cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -546,7 +609,7 @@ export default function App() {
             <div className="pt-4 border-t border-slate-800 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-400">{t.languageLabel}</span>
-                <LanguageSwitcher />
+                <LanguageSwitcher dropUp onChanged={() => setMobileMenuOpen(false)} />
               </div>
               <button
                 type="button"
@@ -604,15 +667,36 @@ export default function App() {
                 ) : (
                   <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
                 )}
-                <div className="text-xs space-y-0.5">
+                <div className="text-xs space-y-1">
                   <div className="font-bold text-white">
                     {t.discordLoginSuccessTitle} — {user.displayName} (@{user.username})
                   </div>
                   <div className="text-slate-200">
                     {loginDmState.sent
                       ? t.discordLoginDmSentMsg
+                      : loginDmState.reason === 'DISCORD_DM_FORBIDDEN'
+                      ? t.discordLoginDmForbiddenMsg
+                      : loginDmState.reason === 'DISCORD_DM_NOT_CONFIGURED'
+                      ? t.discordLoginDmNotConfiguredMsg
                       : t.discordLoginDmFailedMsg}
                   </div>
+                  {!loginDmState.sent && loginDmState.reason && (
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                      <span className="font-mono text-[11px] text-amber-300/90" dir="ltr">
+                        {loginDmState.reason}
+                      </span>
+                      {loginDmState.reason === 'DISCORD_DM_FORBIDDEN' && (
+                        <a
+                          href="https://discord.gg/b3VwbVhwvU"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] font-semibold text-violet-300 hover:text-violet-200 underline"
+                        >
+                          {t.joinHyperSoftDiscordBtn}
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               <button
@@ -640,15 +724,31 @@ export default function App() {
                 ) : (
                   <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
                 )}
-                <div className="text-xs space-y-0.5">
+                <div className="text-xs space-y-1">
                   <div className="text-slate-200 font-medium">
                     {hostCreatedDmBanner.sent
                       ? t.discordHostCreatedDmSentMsg
+                      : hostCreatedDmBanner.reason === 'DISCORD_DM_FORBIDDEN'
+                      ? t.discordHostCreatedDmForbiddenMsg
+                      : hostCreatedDmBanner.reason === 'DISCORD_DM_NOT_CONFIGURED'
+                      ? t.discordHostCreatedDmNotConfiguredMsg
                       : t.discordHostCreatedDmFailedMsg}
                   </div>
                   {!hostCreatedDmBanner.sent && hostCreatedDmBanner.reason && (
-                    <div className="font-mono text-[11px] text-amber-300/90" dir="ltr">
-                      {hostCreatedDmBanner.reason}
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                      <span className="font-mono text-[11px] text-amber-300/90" dir="ltr">
+                        {hostCreatedDmBanner.reason}
+                      </span>
+                      {hostCreatedDmBanner.reason === 'DISCORD_DM_FORBIDDEN' && (
+                        <a
+                          href="https://discord.gg/b3VwbVhwvU"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] font-semibold text-violet-300 hover:text-violet-200 underline"
+                        >
+                          {t.joinHyperSoftDiscordBtn}
+                        </a>
+                      )}
                     </div>
                   )}
                 </div>
@@ -798,7 +898,8 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {hosts.map((host) => {
                       const isOnline =
-                        host.status === 'ONLINE' && host.nodeOnline;
+                        (host.status === 'RUNNING' || host.status === 'ONLINE') &&
+                        host.nodeOnline;
                       const serverPublicId =
                         host.serverId || host.publicId || host.id;
                       return (
@@ -815,12 +916,21 @@ export default function App() {
                                 className={`text-xs font-medium shrink-0 ${
                                   isOnline
                                     ? 'text-emerald-400'
-                                    : host.status === 'PENDING'
+                                    : host.status === 'ERROR'
+                                    ? 'text-red-400'
+                                    : [
+                                        'PENDING',
+                                        'PROVISIONING',
+                                        'BOOTSTRAPPING',
+                                        'NODE_CONNECTING',
+                                        'NODE_ONLINE',
+                                        'STARTING',
+                                      ].includes(host.status)
                                     ? 'text-amber-400'
                                     : 'text-slate-400'
                                 }`}
                               >
-                                ● {isOnline ? t.online : host.status}
+                                ● {isOnline ? host.status : host.status}
                               </span>
                             </div>
 
@@ -862,6 +972,8 @@ export default function App() {
                               <div className="text-slate-500">
                                 {host.nodeOnline
                                   ? `${t.nodeLabel}: ${host.nodeName}`
+                                  : host.provisioningError
+                                  ? host.provisioningError
                                   : t.runtimeNodeUnavailable}
                               </div>
                             </div>

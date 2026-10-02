@@ -83,15 +83,29 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [currentPath]);
 
-  // Prevent body scroll when mobile drawer is open
+  // Prevent body scroll and handle Escape / desktop resize when mobile drawer is open
   useEffect(() => {
     if (drawerOpen) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
     }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDrawerOpen(false);
+      }
+    };
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setDrawerOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleResize);
     return () => {
       document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
     };
   }, [drawerOpen]);
 
@@ -162,10 +176,10 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#080911] text-slate-100 flex flex-col overflow-x-hidden selection:bg-violet-500/30 selection:text-violet-200">
+    <div className="min-h-screen bg-[#080911] text-slate-100 flex flex-col selection:bg-violet-500/30 selection:text-violet-200">
       {/* RESPONSIVE HEADER */}
-      <header className="sticky top-0 z-40 bg-[#080911]/90 backdrop-blur-md border-b border-slate-800/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+      <header className="sticky top-0 z-[60] bg-[#080911]/95 backdrop-blur-md border-b border-slate-800/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-3">
           {/* Zone 1: Official Logo + HyperHost */}
           <a
             href="/"
@@ -208,38 +222,33 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             })}
           </nav>
 
-          {/* Zone 3: Language Switcher + Login Button + Mobile Hamburger */}
+          {/* Zone 3: Desktop Language Switcher + Desktop Login/Dashboard Button + Mobile Hamburger */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            {/* Desktop full language dropdown; Mobile compact language button */}
-            <div className="hidden sm:block">
+            <div className="hidden lg:flex items-center gap-3">
               <LanguageSwitcher />
-            </div>
-            <div className="sm:hidden">
-              <LanguageSwitcher compact />
-            </div>
 
-            {user ? (
-              <button
-                type="button"
-                onClick={onOpenDashboard}
-                className="min-h-[40px] px-3.5 sm:px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-2 whitespace-nowrap cursor-pointer focus-visible:outline-2 focus-visible:outline-violet-400"
-              >
-                <span>{t.openDashboard}</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleDiscordLogin}
-                disabled={connecting}
-                className="min-h-[40px] px-3 sm:px-4 py-2 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white text-xs sm:text-sm font-semibold transition-colors inline-flex items-center gap-2 whitespace-nowrap cursor-pointer focus-visible:outline-2 focus-visible:outline-violet-400"
-              >
-                <DiscordIcon className="w-4 h-4 shrink-0" />
-                <span className="hidden xs:inline sm:inline">
-                  {connecting ? t.connectingDiscord : t.loginWithDiscord}
-                </span>
-                <span className="xs:hidden sm:hidden">Discord</span>
-              </button>
-            )}
+              {user ? (
+                <button
+                  type="button"
+                  onClick={onOpenDashboard}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-colors inline-flex items-center gap-2 whitespace-nowrap cursor-pointer focus-visible:outline-2 focus-visible:outline-violet-400"
+                >
+                  <span>{t.openDashboard}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleDiscordLogin}
+                  disabled={connecting}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white text-sm font-semibold transition-colors inline-flex items-center gap-2 whitespace-nowrap cursor-pointer focus-visible:outline-2 focus-visible:outline-violet-400"
+                >
+                  <DiscordIcon className="w-4 h-4 shrink-0" />
+                  <span>
+                    {connecting ? t.connectingDiscord : t.loginWithDiscord}
+                  </span>
+                </button>
+              )}
+            </div>
 
             {/* Mobile Hamburger Button (Hidden on Desktop lg+) */}
             <button
@@ -247,12 +256,13 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
               onClick={() => setDrawerOpen((prev) => !prev)}
               aria-label={drawerOpen ? t.closeMenuAria : t.openMenuAria}
               aria-expanded={drawerOpen}
-              className="lg:hidden min-h-[40px] min-w-[40px] p-2 rounded-xl bg-[#121424] hover:bg-[#191C32] border border-slate-800 text-slate-200 inline-flex items-center justify-center cursor-pointer focus-visible:outline-2 focus-visible:outline-violet-500"
+              aria-controls="public-mobile-drawer"
+              className="lg:hidden relative z-20 shrink-0 pointer-events-auto touch-manipulation min-h-[40px] min-w-[40px] p-2 rounded-xl bg-[#121424] hover:bg-[#191C32] border border-slate-800 text-slate-200 inline-flex items-center justify-center cursor-pointer focus-visible:outline-2 focus-visible:outline-violet-500"
             >
               {drawerOpen ? (
-                <X className="w-5 h-5" />
+                <X className="w-5 h-5 pointer-events-none" />
               ) : (
-                <Menu className="w-5 h-5" />
+                <Menu className="w-5 h-5 pointer-events-none" />
               )}
             </button>
           </div>
@@ -262,19 +272,20 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       {/* MOBILE NAVIGATION DRAWER */}
       {drawerOpen && (
         <div
-          className="fixed inset-0 z-50 lg:hidden flex"
+          id="public-mobile-drawer"
+          className="fixed inset-x-0 top-16 bottom-0 z-50 lg:hidden flex"
           role="dialog"
           aria-modal="true"
           aria-label="Mobile Navigation Menu"
         >
           {/* Backdrop — closes menu when clicking outside */}
           <div
-            className="fixed inset-0 bg-black/75 backdrop-blur-xs"
+            className="fixed inset-x-0 top-16 bottom-0 bg-black/75 backdrop-blur-xs"
             onClick={() => setDrawerOpen(false)}
           />
 
           {/* Drawer Panel */}
-          <div className="relative z-10 w-80 max-w-[85vw] bg-[#0D0F1B] border-e border-slate-800 h-full flex flex-col justify-between p-5 overflow-y-auto ms-auto">
+          <div className="relative z-10 w-80 max-w-[85vw] bg-[#0D0F1B] border-s border-slate-800 h-full flex flex-col justify-between p-5 overflow-y-auto ms-auto">
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-4 border-b border-slate-800">
                 <div className="flex items-center gap-2.5">
@@ -325,7 +336,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
             <div className="pt-6 border-t border-slate-800 space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-400">{t.languageLabel}</span>
-                <LanguageSwitcher />
+                <LanguageSwitcher dropUp onChanged={() => setDrawerOpen(false)} />
               </div>
 
               {user ? (
@@ -382,7 +393,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
       )}
 
       {/* MAIN PAGE CONTENT */}
-      <main className="flex-1">
+      <main className="flex-1 overflow-x-hidden">
         {currentPath === '/' && (
           <HomePageContent
             onLogin={handleDiscordLogin}

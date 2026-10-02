@@ -63,14 +63,27 @@ export class RuntimeNodeRegistry {
   }
 
   public registerAgent(agent: NodeAgent): void {
+    const existing = this.connectedAgents.get(agent.nodeId);
+    if (existing && existing !== agent) {
+      try {
+        existing.disconnect();
+      } catch {
+        // Ignore stale disconnect errors
+      }
+    }
     this.connectedAgents.set(agent.nodeId, agent);
   }
 
-  public unregisterAgent(nodeId: string): void {
+  public unregisterAgent(nodeId: string, expectedAgent?: NodeAgent): boolean {
     const existing = this.connectedAgents.get(nodeId);
-    if (existing) {
-      this.connectedAgents.delete(nodeId);
+    if (!existing) {
+      return false;
     }
+    if (expectedAgent && existing !== expectedAgent) {
+      return false;
+    }
+    this.connectedAgents.delete(nodeId);
+    return true;
   }
 
   /**

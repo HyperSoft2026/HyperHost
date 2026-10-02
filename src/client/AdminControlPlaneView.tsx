@@ -57,16 +57,6 @@ export const AdminControlPlaneView: React.FC<{
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Register Runtime Node Form
-  const [showNodeForm, setShowNodeForm] = useState(false);
-  const [nodeName, setNodeName] = useState('');
-  const [nodeLocation, setNodeLocation] = useState('');
-  const [nodeFqdn, setNodeFqdn] = useState('');
-  const [nodeIp, setNodeIp] = useState('');
-  const [nodePort, setNodePort] = useState(8080);
-  const [nodeMemoryMb, setNodeMemoryMb] = useState(16384);
-  const [nodeDiskMb, setNodeDiskMb] = useState(102400);
-
   useEffect(() => {
     void loadAdminOverview();
   }, []);
@@ -248,47 +238,6 @@ export const AdminControlPlaneView: React.FC<{
     }
   }
 
-  async function handleRegisterNode(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await apiFetch<{ node: any; tokenConfigured?: boolean }>(
-        '/api/admin/nodes',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            name: nodeName.trim(),
-            location: nodeLocation.trim(),
-            fqdn: nodeFqdn.trim(),
-            ipAddress: nodeIp.trim(),
-            daemonPort: Number(nodePort),
-            maxMemoryMb: Number(nodeMemoryMb),
-            maxDiskMb: Number(nodeDiskMb),
-            maxCpuPercent: 1600,
-          }),
-        }
-      );
-      setNotice(
-        isRtl
-          ? `تم تسجيل عقدة التشغيل "${res.node.name}" (${res.node.publicId}) بنجاح.`
-          : `Registered Runtime Node "${res.node.name}" (${res.node.publicId}).`
-      );
-      setNodeName('');
-      setNodeLocation('');
-      setNodeFqdn('');
-      setNodeIp('');
-      void loadAdminOverview();
-      if (activeEntity === 'nodes') {
-        void loadEntityRecords();
-      }
-    } catch (err) {
-      if (err instanceof ClientApiError) {
-        setError(`[${err.code}] ${err.message}`);
-      }
-    }
-  }
-
   const entityTabs: Array<{
     id: AdminEntityTab;
     label: string;
@@ -347,7 +296,22 @@ export const AdminControlPlaneView: React.FC<{
 
   const statusOptionsByEntity: Record<AdminEntityTab, string[]> = {
     users: ['ALL', 'USER', 'ADMIN'],
-    hosts: ['ALL', 'ONLINE', 'OFFLINE', 'PENDING', 'STARTING', 'STOPPING', 'SUSPENDED', 'ERROR'],
+    hosts: [
+      'ALL',
+      'RUNNING',
+      'ONLINE',
+      'OFFLINE',
+      'PENDING',
+      'PROVISIONING',
+      'BOOTSTRAPPING',
+      'NODE_CONNECTING',
+      'NODE_ONLINE',
+      'STARTING',
+      'STOPPED',
+      'STOPPING',
+      'SUSPENDED',
+      'ERROR',
+    ],
     activity: ['ALL'],
     sessions: ['ALL', 'ACTIVE', 'REVOKED'],
     nodes: ['ALL', 'ONLINE', 'OFFLINE', 'MAINTENANCE'],
@@ -366,14 +330,6 @@ export const AdminControlPlaneView: React.FC<{
         </div>
 
         <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => setShowNodeForm((prev) => !prev)}
-            className="px-3.5 py-2 text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{t.registerNodeBtn}</span>
-          </button>
           <button
             type="button"
             onClick={() => {
@@ -446,122 +402,6 @@ export const AdminControlPlaneView: React.FC<{
           </div>
         ))}
       </div>
-
-      {/* Collapsible Register Runtime Node Form */}
-      {showNodeForm && (
-        <form
-          onSubmit={handleRegisterNode}
-          className="p-6 rounded-2xl bg-[#11131F] border border-violet-500/30 space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-bold text-white">
-              <Server className="w-4 h-4 text-violet-400 shrink-0" />
-              <span>{t.registerNodeTitle}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowNodeForm(false)}
-              className="text-slate-400 hover:text-white cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                {t.adminNodeNameLabel}
-              </label>
-              <input
-                type="text"
-                required
-                value={nodeName}
-                onChange={(e) => setNodeName(e.target.value)}
-                placeholder="eu-central-node-01"
-                dir="ltr"
-                className="w-full px-3 py-2 text-xs bg-[#090A10] border border-slate-800 rounded-lg text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                {t.adminLocationLabel}
-              </label>
-              <input
-                type="text"
-                required
-                value={nodeLocation}
-                onChange={(e) => setNodeLocation(e.target.value)}
-                placeholder="Frankfurt, DE"
-                className="w-full px-3 py-2 text-xs bg-[#090A10] border border-slate-800 rounded-lg text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                {t.adminFqdnLabel}
-              </label>
-              <input
-                type="text"
-                required
-                value={nodeFqdn}
-                onChange={(e) => setNodeFqdn(e.target.value)}
-                placeholder="node01.hyperhost.internal"
-                dir="ltr"
-                className="w-full px-3 py-2 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                {t.adminIpAddressLabel}
-              </label>
-              <input
-                type="text"
-                required
-                value={nodeIp}
-                onChange={(e) => setNodeIp(e.target.value)}
-                placeholder="10.20.0.10"
-                dir="ltr"
-                className="w-full px-3 py-2 text-xs font-mono bg-[#090A10] border border-slate-800 rounded-lg text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                {t.adminMaxMemoryLabel}
-              </label>
-              <input
-                type="number"
-                required
-                value={nodeMemoryMb}
-                onChange={(e) => setNodeMemoryMb(Number(e.target.value))}
-                dir="ltr"
-                className="w-full px-3 py-2 text-xs font-mono tabular-nums bg-[#090A10] border border-slate-800 rounded-lg text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                {t.adminMaxDiskLabel}
-              </label>
-              <input
-                type="number"
-                required
-                value={nodeDiskMb}
-                onChange={(e) => setNodeDiskMb(Number(e.target.value))}
-                dir="ltr"
-                className="w-full px-3 py-2 text-xs font-mono tabular-nums bg-[#090A10] border border-slate-800 rounded-lg text-white"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="px-4 py-2 text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white rounded-lg inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{t.registerNodeBtn}</span>
-            </button>
-          </div>
-        </form>
-      )}
 
       {/* Entity Explorer Navigation Tabs */}
       <div className="flex items-center gap-1.5 p-1.5 bg-[#11131F] border border-slate-800 rounded-xl overflow-x-auto">
@@ -852,9 +692,9 @@ export const AdminControlPlaneView: React.FC<{
                           <td className="py-3 px-4 font-mono">
                             <span
                               className={
-                                row.status === 'ONLINE'
+                                row.status === 'RUNNING' || row.status === 'ONLINE'
                                   ? 'text-emerald-400'
-                                  : row.status === 'SUSPENDED'
+                                  : row.status === 'SUSPENDED' || row.status === 'ERROR'
                                   ? 'text-red-400'
                                   : 'text-amber-400'
                               }

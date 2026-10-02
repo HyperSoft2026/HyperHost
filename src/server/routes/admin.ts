@@ -7,6 +7,7 @@ import { probeDiscordBotApiHealth } from '../discord-notify';
 import { generateSecureToken, hashToken } from '../crypto';
 import { AppError } from '../errors';
 import { runtimeRegistry } from '../../runtime/registry';
+import { runtimeProvisionerService } from '../../runtime/provisioner';
 import { formatEntityPublicId } from '../../shared/ids';
 import { MAX_HOSTS_PER_USER } from '../../shared/types';
 import {
@@ -110,6 +111,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
             daemonPort: n.daemonPort,
             status: runtimeRegistry.getNodeEffectiveStatus(n.id, n.status),
             liveConnected: runtimeRegistry.isNodeConnected(n.id),
+            dedicatedHostId: n.dedicatedHostId,
+            provider: n.provider,
+            provisionedServerId: n.provisionedServerId,
+            serverStatus: n.serverStatus,
             capabilities: agent?.capabilities ?? null,
             resources: agent?.resources ?? null,
             maxMemoryMb: n.maxMemoryMb,
@@ -280,9 +285,21 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
               type: h.type,
               runtime: h.runtime,
               runtimeVersion: h.runtimeVersion,
-              status: nodeConnected ? h.status : h.status === 'ONLINE' ? 'OFFLINE' : h.status,
+              status: nodeConnected
+                ? h.status
+                : h.status === 'ONLINE' ||
+                  h.status === 'RUNNING' ||
+                  h.status === 'STARTING' ||
+                  h.status === 'STOPPING'
+                ? 'OFFLINE'
+                : h.status,
               nodeOnline: nodeConnected,
               nodeName: h.node ? `${h.node.name} (${h.node.location})` : null,
+              provider: h.provider,
+              provisionedServerId: h.provisionedServerId,
+              provisioningStatus: h.provisioningStatus,
+              serverStatus: h.serverStatus,
+              provisioningError: h.provisioningError,
               memoryLimitMb: h.memoryLimitMb,
               cpuLimitPercent: h.cpuLimitPercent,
               diskLimitMb: h.diskLimitMb,
@@ -456,6 +473,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
             daemonPort: n.daemonPort,
             status: n.status,
             liveConnected: runtimeRegistry.isNodeConnected(n.id),
+            dedicatedHostId: n.dedicatedHostId,
+            provider: n.provider,
+            provisionedServerId: n.provisionedServerId,
+            serverStatus: n.serverStatus,
             maxMemoryMb: n.maxMemoryMb,
             maxDiskMb: n.maxDiskMb,
             maxCpuPercent: n.maxCpuPercent,
@@ -713,80 +734,96 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  // Register a new Runtime Node in Control Plane
-  app.post('/api/admin/nodes', async (request, reply) => {
-    const { user } = await requireAdmin(request);
-    const body = CreateNodeSchema.parse(request.body);
+  // Manual Runtime Node registration is disabled under Automatic Per-Host Runtime Provisioning
+  app.post('/api/admin/nodes', async (request) => {
+    await requireAdmin(request);
+    throw new AppError(
+      'MANUAL_NODE_REGISTRATION_DISABLED',
+      'Manual Runtime Node registration is disabled. HyperHost automatically provisions a dedicated Runtime Server and Node for each Host.',
+      403
+    );
+  });
+
+  // Update Host Status (Admin only)
+  app.patch('/api/admin/hosts/:hostId/status', async (request) => {
+    const { user: adminUser } = await requireAdmin(request);
+    const { hostId } = request.params as { hostId: string };
+    const body = z
+      .object({
+        status: z.enum(['SUSPENDED', 'OFFLINE', 'PENDING', 'STOPPED']),
+      })
+      .parse(request.body);
     const prisma = getPrismaOrThrow();
 
-    const existing = await prisma.node.findUnique({
-      where: { name: body.name },
+    const target = await prisma.host.findFirst({
+      where: { OR: [{ id: hostId }, { publicId: hostId }] },
     });
 
-    if (existing) {
-      throw new AppError(
-        'NODE_NAME_EXISTS',
-        `A Runtime Node named "${body.name}" is already registered.`,
-        409
-      );
+    if (!target) {
+      throw new AppError('HOST_NOT_FOUND', 'Host not found.', 404);
     }
 
-    // Generate one-time Runtime Node daemon token; store only HMAC-SHA256 hash
-    // Never return raw agent token to the frontend; store only HMAC-SHA256 hash in PostgreSQL
-    const rawAgentToken =
-      body.agentToken ||
-      config.runtimeNodeSecret ||
-      `hhnode_${generateSecureToken(24)}`;
-    const agentTokenHash = hashToken(rawAgentToken);
-
-    const node = await prisma.node.create({
-      data: {
-        name: body.name,
-        location: body.location,
-        fqdn: body.fqdn,
-        ipAddress: body.ipAddress,
-        daemonPort: body.daemonPort,
-        status: 'OFFLINE',
-        isOnline: false,
-        agentTokenHash,
-        maxMemoryMb: body.maxMemoryMb,
-        maxDiskMb: body.maxDiskMb,
-        maxCpuPercent: body.maxCpuPercent,
-      },
+    const updated = await prisma.host.update({
+      where: { id: target.id },
+      data: { status: body.status },
     });
 
     await recordActivityLog({
-      userId: user.id,
-      action: 'Registered Runtime Node',
+      userId: adminUser.id,
+      hostId: updated.id,
+      action: `Admin Updated Host Status (${updated.status})`,
       metadata: {
-        nodeId: formatEntityPublicId('nod', node.id),
-        name: node.name,
-        fqdn: node.fqdn,
-        location: node.location,
+        serverId: formatEntityPublicId('srv', updated.id, updated.publicId),
+        status: updated.status,
       },
       request,
     });
 
-    reply.status(201);
     return {
       success: true,
       data: {
-        node: {
-          id: node.id,
-          publicId: formatEntityPublicId('nod', node.id),
-          name: node.name,
-          location: node.location,
-          fqdn: node.fqdn,
-          ipAddress: node.ipAddress,
-          daemonPort: node.daemonPort,
-          status: node.status,
-          maxMemoryMb: node.maxMemoryMb,
-          maxDiskMb: node.maxDiskMb,
-          maxCpuPercent: node.maxCpuPercent,
-          createdAt: node.createdAt.toISOString(),
-        },
-        tokenConfigured: true,
+        id: updated.id,
+        status: updated.status,
       },
+    };
+  });
+
+  // Delete Host and destroy its dedicated Runtime Server & Node (Admin only)
+  app.delete('/api/admin/hosts/:hostId', async (request) => {
+    const { user: adminUser } = await requireAdmin(request);
+    const { hostId } = request.params as { hostId: string };
+    const prisma = getPrismaOrThrow();
+
+    const target = await prisma.host.findFirst({
+      where: { OR: [{ id: hostId }, { publicId: hostId }] },
+    });
+
+    if (!target) {
+      throw new AppError('HOST_NOT_FOUND', 'Host not found.', 404);
+    }
+
+    await runtimeProvisionerService.destroyHostRuntime(target.id);
+
+    await prisma.nodeAllocation.updateMany({
+      where: { hostId: target.id },
+      data: { hostId: null, isPrimary: false, status: 'AVAILABLE' },
+    });
+
+    await prisma.host.delete({ where: { id: target.id } });
+
+    await recordActivityLog({
+      userId: adminUser.id,
+      action: 'Admin Deleted Host',
+      metadata: {
+        deletedHostId: target.id,
+        deletedHostName: target.name,
+      },
+      request,
+    });
+
+    return {
+      success: true,
+      data: { deleted: true, id: target.id },
     };
   });
 

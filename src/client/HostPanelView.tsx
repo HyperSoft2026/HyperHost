@@ -156,6 +156,26 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
   }, [hostId]);
 
   useEffect(() => {
+    if (!hostId || !hostData) return;
+    if (
+      ![
+        'PENDING',
+        'PROVISIONING',
+        'BOOTSTRAPPING',
+        'NODE_CONNECTING',
+        'NODE_ONLINE',
+        'STARTING',
+      ].includes(hostData.status)
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void loadHostDetail();
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [hostId, hostData?.status]);
+
+  useEffect(() => {
     if (activeTab === 'console') {
       connectConsoleWebSocket();
     }
@@ -165,7 +185,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
         wsRef.current = null;
       }
     };
-  }, [activeTab, hostId]);
+  }, [activeTab, hostId, locale]);
 
   useEffect(() => {
     if (!hostId) return;
@@ -635,6 +655,15 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
       </div>
 
       {/* Structured Error / Notice Banners */}
+      {hostData?.provisioningError && !panelError && (
+        <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-xs text-red-200 flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <div className="font-mono" dir="ltr">
+            [PROVISIONING_FAILED] {hostData.provisioningError}
+          </div>
+        </div>
+      )}
+
       {panelError && (
         <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-xs text-red-200 flex items-start gap-2.5">
           <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />

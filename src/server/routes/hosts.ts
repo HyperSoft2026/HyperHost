@@ -16,6 +16,8 @@ import {
   getRuntimeUnavailableLocalizedMessage,
   runtimeRegistry,
 } from '../../runtime/registry';
+import { runtimeProvisionerService } from '../../runtime/provisioner';
+import type { NodeAgent } from '../../runtime/interfaces';
 import { sendDiscordHostCreatedNotification } from '../discord-notify';
 import { formatEntityPublicId, generatePublicId } from '../../shared/ids';
 import {
@@ -49,6 +51,26 @@ function resolveRequestLocale(request: FastifyRequest): SupportedLocale {
       (typeof headerLocale === 'string' ? headerLocale : undefined) ||
       cookieLocale
   );
+}
+
+async function resolveAgentForHostOrNull(host: {
+  id: string;
+  nodeId: string | null;
+  runtime: any;
+}): Promise<NodeAgent | null> {
+  // Strictly 1-to-1 per-Host dedicated Node resolution
+  return runtimeRegistry.getAgentOrNull(host.nodeId);
+}
+
+async function requireAgentForHost(
+  host: { id: string; nodeId: string | null; runtime: any },
+  locale?: SupportedLocale | string | null
+): Promise<NodeAgent> {
+  const agent = await resolveAgentForHostOrNull(host);
+  if (!agent) {
+    return runtimeRegistry.requireConnectedAgent(host.nodeId, locale);
+  }
+  return agent;
 }
 
 export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
@@ -109,7 +131,14 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
 
     const mappedHosts: HostSummaryDTO[] = hosts.map((h) => {
       const nodeConnected = runtimeRegistry.isNodeConnected(h.nodeId);
-      const effectiveStatus = nodeConnected ? h.status : h.status === 'ONLINE' ? 'OFFLINE' : h.status;
+      const effectiveStatus = nodeConnected
+        ? h.status
+        : h.status === 'ONLINE' ||
+          h.status === 'RUNNING' ||
+          h.status === 'STARTING' ||
+          h.status === 'STOPPING'
+        ? 'OFFLINE'
+        : h.status;
       const primary = h.allocations[0] || null;
       const serverPublicId = formatEntityPublicId('srv', h.id, h.publicId);
 
@@ -126,6 +155,14 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
         nodeId: h.nodeId,
         nodeName: h.node ? `${h.node.name} (${h.node.location})` : null,
         nodeOnline: nodeConnected,
+        provisionedServerId: h.provisionedServerId,
+        provider: h.provider,
+        provisioningStatus: h.provisioningStatus,
+        serverStatus: h.serverStatus,
+        provisioningError: h.provisioningError,
+        provisionedAt: h.provisionedAt ? h.provisionedAt.toISOString() : null,
+        bootstrappedAt: h.bootstrappedAt ? h.bootstrappedAt.toISOString() : null,
+        nodeConnectedAt: h.nodeConnectedAt ? h.nodeConnectedAt.toISOString() : null,
         memoryLimitMb: h.memoryLimitMb,
         cpuLimitPercent: h.cpuLimitPercent,
         diskLimitMb: h.diskLimitMb,
@@ -150,11 +187,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
           maxHosts: MAX_HOSTS_PER_USER,
           remainingCount: Math.max(0, MAX_HOSTS_PER_USER - ownedCount),
         },
-        availableNodes: nodes.map((n) => ({
-          ...n,
-          publicId: formatEntityPublicId('nod', n.id),
-          liveConnected: runtimeRegistry.isNodeConnected(n.id),
-        })),
+        availableNodes: [],
         runtimes: RUNTIME_CATALOG,
         recentActivity: recentActivity.map((log) => ({
           id: log.id,
@@ -201,38 +234,9 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('INVALID_RUNTIME', 'Unsupported runtime selected.', 400);
     }
 
-    let selectedNodeId: string | null = null;
-    let nodeIsLive = false;
-
-    // Security Requirement: Regular users cannot specify nodeId directly.
-    // Only Administrators may explicitly pin a nodeId; otherwise the Control Plane auto-assigns an ONLINE node.
-    if (body.nodeId) {
-      if (user.role !== 'ADMIN') {
-        throw new AppError(
-          'FORBIDDEN_NODE_SELECTION',
-          'Only Control Plane administrators may manually specify a target Runtime Node.',
-          403
-        );
-      }
-      const node = await prisma.node.findUnique({ where: { id: body.nodeId } });
-      if (!node) {
-        throw new AppError('NODE_NOT_FOUND', 'The selected Runtime Node does not exist.', 404);
-      }
-      selectedNodeId = node.id;
-      nodeIsLive = runtimeRegistry.isNodeConnected(node.id);
-    } else {
-      const optimalAgent = runtimeRegistry.selectOptimalConnectedNode(body.runtime);
-      if (optimalAgent) {
-        selectedNodeId = optimalAgent.nodeId;
-        nodeIsLive = true;
-      }
-    }
-
     const adapter = runtimeRegistry.getRuntimeAdapter(body.runtime);
     const dockerImage = adapter.resolveDockerImage(body.runtimeVersion);
-
-    // Never pretend a Host is ONLINE/RUNNING if no Runtime Node is connected; create as PENDING
-    const initialStatus = nodeIsLive ? 'INSTALLING' : 'PENDING';
+    const providerName = runtimeProvisionerService.getProvisioner().providerName;
 
     const generatedServerId = generatePublicId('srv');
 
@@ -240,13 +244,16 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       data: {
         publicId: generatedServerId,
         ownerId: user.id,
-        nodeId: selectedNodeId,
+        nodeId: null,
+        provider: providerName,
+        provisioningStatus: 'PENDING',
+        serverStatus: 'UNPROVISIONED',
         name: body.name,
         description: body.description ?? null,
         type: body.type,
         runtime: body.runtime,
         runtimeVersion: body.runtimeVersion || runtimeItem.defaultVersion,
-        status: initialStatus,
+        status: 'PENDING',
         memoryLimitMb: body.memoryLimitMb,
         cpuLimitPercent: body.cpuLimitPercent,
         diskLimitMb: body.diskLimitMb,
@@ -263,23 +270,18 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       createdHost.publicId
     );
 
-    // If a node was selected and has an available allocation, bind primary allocation
-    if (selectedNodeId) {
-      const availableAlloc = await prisma.nodeAllocation.findFirst({
-        where: { nodeId: selectedNodeId, status: 'AVAILABLE', hostId: null },
-        orderBy: { port: 'asc' },
-      });
-      if (availableAlloc) {
-        await prisma.nodeAllocation.update({
-          where: { id: availableAlloc.id },
-          data: {
-            hostId: createdHost.id,
-            isPrimary: true,
-            status: 'ASSIGNED',
-          },
-        });
-      }
+    // Trigger Automatic Per-Host Runtime Provisioning:
+    // If provider is not configured, run synchronously so immediate state is truthful (ERROR / FAILED).
+    // If provider is configured, start asynchronously while client polls lifecycle progress.
+    if (!runtimeProvisionerService.isProviderConfigured()) {
+      await runtimeProvisionerService.provisionHostRuntime(createdHost.id);
+    } else {
+      void runtimeProvisionerService.provisionHostRuntime(createdHost.id);
     }
+
+    const latestHost =
+      (await prisma.host.findUnique({ where: { id: createdHost.id } })) ||
+      createdHost;
 
     const requestLocale = resolveRequestLocale(request);
     const userPublicId = formatEntityPublicId('usr', user.id, user.publicId);
@@ -299,24 +301,26 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       memoryLimitMb: createdHost.memoryLimitMb,
       diskLimitMb: createdHost.diskLimitMb,
       cpuLimitPercent: createdHost.cpuLimitPercent,
-      status: createdHost.status,
-      createdAt: createdHost.createdAt,
+      status: latestHost.status,
+      createdAt: latestHost.createdAt,
       locale: requestLocale,
     });
 
     await recordActivityLog({
       userId: user.id,
-      hostId: createdHost.id,
+      hostId: latestHost.id,
       action: 'Created Host',
       metadata: {
         serverId: serverPublicId,
-        name: createdHost.name,
-        type: createdHost.type,
-        runtime: createdHost.runtime,
-        status: createdHost.status,
-        memoryLimitMb: createdHost.memoryLimitMb,
-        cpuLimitPercent: createdHost.cpuLimitPercent,
-        diskLimitMb: createdHost.diskLimitMb,
+        name: latestHost.name,
+        type: latestHost.type,
+        runtime: latestHost.runtime,
+        status: latestHost.status,
+        provisioningStatus: latestHost.provisioningStatus,
+        provider: latestHost.provider,
+        memoryLimitMb: latestHost.memoryLimitMb,
+        cpuLimitPercent: latestHost.cpuLimitPercent,
+        diskLimitMb: latestHost.diskLimitMb,
         discordHostDmSent: dmResult.ok,
         discordHostDmReason: dmResult.ok ? null : dmResult.reason,
       },
@@ -328,11 +332,11 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       success: true,
       data: {
         host: {
-          ...createdHost,
+          ...latestHost,
           publicId: serverPublicId,
           serverId: serverPublicId,
-          createdAt: createdHost.createdAt.toISOString(),
-          updatedAt: createdHost.updatedAt.toISOString(),
+          createdAt: latestHost.createdAt.toISOString(),
+          updatedAt: latestHost.updatedAt.toISOString(),
         },
         notification: {
           sent: dmResult.ok,
@@ -400,8 +404,29 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
           type: fullHost.type,
           runtime: fullHost.runtime,
           runtimeVersion: fullHost.runtimeVersion,
-          status: nodeConnected ? fullHost.status : fullHost.status === 'ONLINE' ? 'OFFLINE' : fullHost.status,
+          status: nodeConnected
+            ? fullHost.status
+            : fullHost.status === 'ONLINE' ||
+              fullHost.status === 'RUNNING' ||
+              fullHost.status === 'STARTING' ||
+              fullHost.status === 'STOPPING'
+            ? 'OFFLINE'
+            : fullHost.status,
           nodeOnline: nodeConnected,
+          provisionedServerId: fullHost.provisionedServerId,
+          provider: fullHost.provider,
+          provisioningStatus: fullHost.provisioningStatus,
+          serverStatus: fullHost.serverStatus,
+          provisioningError: fullHost.provisioningError,
+          provisionedAt: fullHost.provisionedAt
+            ? fullHost.provisionedAt.toISOString()
+            : null,
+          bootstrappedAt: fullHost.bootstrappedAt
+            ? fullHost.bootstrappedAt.toISOString()
+            : null,
+          nodeConnectedAt: fullHost.nodeConnectedAt
+            ? fullHost.nodeConnectedAt.toISOString()
+            : null,
           memoryLimitMb: fullHost.memoryLimitMb,
           cpuLimitPercent: fullHost.cpuLimitPercent,
           diskLimitMb: fullHost.diskLimitMb,
@@ -444,6 +469,8 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
 
     const prisma = getPrismaOrThrow();
 
+    await runtimeProvisionerService.destroyHostRuntime(host.id);
+
     await prisma.nodeAllocation.updateMany({
       where: { hostId: host.id },
       data: { hostId: null, isPrimary: false, status: 'AVAILABLE' },
@@ -474,7 +501,8 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const { host } = await requireHostPermission(request, id, 'console.read');
     const locale = resolveRequestLocale(request);
-    const nodeConnected = runtimeRegistry.isNodeConnected(host.nodeId);
+    const agent = await resolveAgentForHostOrNull(host);
+    const nodeConnected = Boolean(agent);
 
     return {
       success: true,
@@ -507,7 +535,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
 
         const canWrite =
           isOwner || grantedPermissions.includes('console.write');
-        const agent = runtimeRegistry.getAgentOrNull(host.nodeId);
+        const agent = await resolveAgentForHostOrNull(host);
 
         if (!agent) {
           const unavailableMsg = getRuntimeUnavailableLocalizedMessage(locale);
@@ -617,8 +645,8 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError('INVALID_PATH', 'Path traversal is prohibited.', 400);
     }
 
-    const agent = runtimeRegistry.requireConnectedAgent(
-      host.nodeId,
+    const agent = await requireAgentForHost(
+      host,
       resolveRequestLocale(request)
     );
     const entries = await agent.fileManager.listDirectory(host.id, targetPath);
@@ -639,8 +667,8 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       body.action === 'list' || body.action === 'read' ? 'files.read' : 'files.write';
 
     const { auth, host } = await requireHostPermission(request, id, requiredScope);
-    const agent = runtimeRegistry.requireConnectedAgent(
-      host.nodeId,
+    const agent = await requireAgentForHost(
+      host,
       resolveRequestLocale(request)
     );
 
@@ -1011,7 +1039,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string };
     const { host } = await requireHostPermission(request, id, 'metrics.read');
 
-    const agent = runtimeRegistry.getAgentOrNull(host.nodeId);
+    const agent = await resolveAgentForHostOrNull(host);
     if (!agent) {
       return {
         success: true,
@@ -1066,8 +1094,8 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     );
 
     // Strictly require a live connected Runtime Node; throws 503 RUNTIME_NODE_UNAVAILABLE if offline
-    const agent = runtimeRegistry.requireConnectedAgent(
-      host.nodeId,
+    const agent = await requireAgentForHost(
+      host,
       resolveRequestLocale(request)
     );
     const prisma = getPrismaOrThrow();
@@ -1108,21 +1136,46 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       })),
     };
 
+    let finalStatus = host.status;
+
     if (body.action === 'start') {
-      await agent.processManager.start(host.id, spec);
       await prisma.host.update({ where: { id: host.id }, data: { status: 'STARTING' } });
+      try {
+        await agent.processManager.start(host.id, spec);
+        await prisma.host.update({ where: { id: host.id }, data: { status: 'RUNNING' } });
+        finalStatus = 'RUNNING';
+      } catch (err) {
+        await prisma.host
+          .update({ where: { id: host.id }, data: { status: 'ERROR' } })
+          .catch(() => null);
+        throw err;
+      }
     } else if (body.action === 'stop') {
-      await agent.processManager.stop(host.id);
       await prisma.host.update({ where: { id: host.id }, data: { status: 'STOPPING' } });
+      await agent.processManager.stop(host.id);
+      await prisma.host.update({ where: { id: host.id }, data: { status: 'STOPPED' } });
+      finalStatus = 'STOPPED';
     } else if (body.action === 'restart') {
-      await agent.processManager.restart(host.id, spec);
       await prisma.host.update({ where: { id: host.id }, data: { status: 'STARTING' } });
+      try {
+        await agent.processManager.restart(host.id, spec);
+        await prisma.host.update({ where: { id: host.id }, data: { status: 'RUNNING' } });
+        finalStatus = 'RUNNING';
+      } catch (err) {
+        await prisma.host
+          .update({ where: { id: host.id }, data: { status: 'ERROR' } })
+          .catch(() => null);
+        throw err;
+      }
     } else if (body.action === 'kill') {
       await agent.processManager.kill(host.id);
-      await prisma.host.update({ where: { id: host.id }, data: { status: 'OFFLINE' } });
+      await prisma.host.update({ where: { id: host.id }, data: { status: 'STOPPED' } });
+      finalStatus = 'STOPPED';
     } else if (body.action === 'reinstall') {
-      await agent.containerManager.reinstallContainer(spec);
       await prisma.host.update({ where: { id: host.id }, data: { status: 'INSTALLING' } });
+      await agent.containerManager.reinstallContainer(spec);
+      await prisma.host.update({ where: { id: host.id }, data: { status: 'STOPPED' } });
+      finalStatus = 'STOPPED';
     }
 
     const actionLabels: Record<typeof body.action, string> = {
@@ -1137,7 +1190,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       userId: auth.user.id,
       hostId: host.id,
       action: actionLabels[body.action],
-      metadata: { action: body.action, nodeId: host.nodeId },
+      metadata: { action: body.action, nodeId: host.nodeId, status: finalStatus },
       request,
     });
 
@@ -1146,6 +1199,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       data: {
         dispatched: true,
         action: body.action,
+        status: finalStatus,
       },
     };
   });

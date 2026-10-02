@@ -36,7 +36,7 @@ export class ControlPlaneScheduler {
       const staleThreshold = new Date(now.getTime() - NODE_HEARTBEAT_TIMEOUT_MS);
 
       // Mark any Node whose heartbeat expired as OFFLINE
-      await prisma.node.updateMany({
+      const staleNodes = await prisma.node.findMany({
         where: {
           isOnline: true,
           status: { in: ['ONLINE', 'DEGRADED'] },
@@ -45,11 +45,28 @@ export class ControlPlaneScheduler {
             { lastHeartbeatAt: { lt: staleThreshold } },
           ],
         },
-        data: {
-          isOnline: false,
-          status: 'OFFLINE',
-        },
+        select: { id: true },
       });
+
+      if (staleNodes.length > 0) {
+        const staleNodeIds = staleNodes.map((n) => n.id);
+        await prisma.node.updateMany({
+          where: { id: { in: staleNodeIds } },
+          data: {
+            isOnline: false,
+            status: 'OFFLINE',
+          },
+        });
+        await prisma.host.updateMany({
+          where: {
+            nodeId: { in: staleNodeIds },
+            status: { in: ['RUNNING', 'ONLINE', 'STARTING', 'STOPPING'] },
+          },
+          data: {
+            status: 'OFFLINE',
+          },
+        });
+      }
 
       const dueSchedules = await prisma.schedule.findMany({
         where: {

@@ -44,6 +44,7 @@ export class WebSocketNodeAgent implements NodeAgent {
     string,
     Set<(frame: ConsoleStreamFrame) => void>
   >();
+  private readonly consoleBuffers = new Map<string, ConsoleStreamFrame[]>();
 
   public readonly processManager: ProcessManager;
   public readonly containerManager: ContainerManager;
@@ -90,7 +91,14 @@ export class WebSocketNodeAgent implements NodeAgent {
         await this.sendRpc('container.reinstall', { spec });
       },
       inspectState: async (hostId: string) => {
-        return this.sendRpc('container.inspect', { hostId });
+        const res = await this.sendRpc('container.inspect', { hostId });
+        if (typeof res === 'string') {
+          return res as HostStatusCode;
+        }
+        if (res && typeof res === 'object' && typeof res.status === 'string') {
+          return res.status as HostStatusCode;
+        }
+        return res?.running ? 'RUNNING' : 'STOPPED';
       },
     };
 
@@ -237,13 +245,22 @@ export class WebSocketNodeAgent implements NodeAgent {
       }
 
       if (msg.type === 'console' && msg.hostId) {
+        const frame: ConsoleStreamFrame = {
+          type: msg.stream || 'stdout',
+          data: String(msg.data ?? ''),
+          timestamp: msg.timestamp || new Date().toISOString(),
+        };
+        let buf = this.consoleBuffers.get(msg.hostId);
+        if (!buf) {
+          buf = [];
+          this.consoleBuffers.set(msg.hostId, buf);
+        }
+        buf.push(frame);
+        if (buf.length > 100) {
+          buf.shift();
+        }
         const subs = this.consoleSubscribers.get(msg.hostId);
         if (subs && subs.size > 0) {
-          const frame: ConsoleStreamFrame = {
-            type: msg.stream || 'stdout',
-            data: String(msg.data ?? ''),
-            timestamp: msg.timestamp || new Date().toISOString(),
-          };
           for (const cb of subs) {
             cb(frame);
           }
@@ -269,6 +286,17 @@ export class WebSocketNodeAgent implements NodeAgent {
       this.consoleSubscribers.set(hostId, set);
     }
     set.add(onFrame);
+
+    const buffered = this.consoleBuffers.get(hostId);
+    if (buffered && buffered.length > 0) {
+      for (const frame of buffered) {
+        try {
+          onFrame(frame);
+        } catch {
+          // Ignore subscriber callback error
+        }
+      }
+    }
 
     return () => {
       const current = this.consoleSubscribers.get(hostId);

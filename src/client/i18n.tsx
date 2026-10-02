@@ -31,8 +31,8 @@ const dictionary = {
     connectingDiscord: 'جارٍ التحويل إلى Discord...',
     openDashboard: 'لوحة التحكم',
     languageLabel: 'اللغة',
-    openMenuAria: 'فتح القائمة الرئيسية',
-    closeMenuAria: 'إغلاق القائمة الرئيسية',
+    openMenuAria: 'فتح القائمة',
+    closeMenuAria: 'إغلاق القائمة',
     // Homepage
     heroBadge: 'HyperHost — Powered by HyperSoft',
     heroTitle: 'منصة احترافية لاستضافة بوتات Discord وTelegram',
@@ -83,12 +83,21 @@ const dictionary = {
     discordLoginSuccessTitle: 'تم تسجيل الدخول بنجاح إلى HyperHost',
     discordLoginSuccessDesc: 'تم إرسال إشعار تسجيل الدخول إلى Discord.',
     discordLoginDmSentMsg: 'تم إرسال إشعار تسجيل الدخول إلى Discord.',
+    discordLoginDmForbiddenMsg:
+      'تم تسجيل الدخول بنجاح، لكن تعذر إرسال رسالة خاصة في Discord (403: الرسائل الخاصة مغلقة في حسابك أو لا يوجد سيرفر مشترك مع البوت).',
+    discordLoginDmNotConfiguredMsg:
+      'تم تسجيل الدخول بنجاح، لكن إشعارات Discord غير مفعّلة حالياً.',
     discordLoginDmFailedMsg:
       'تم تسجيل الدخول بنجاح، لكن تعذر إرسال إشعار Discord.',
     discordHostCreatedDmSentMsg:
       'تم إنشاء الاستضافة بنجاح، وتم إرسال إشعار التفاصيل إلى Discord.',
+    discordHostCreatedDmForbiddenMsg:
+      'تم إنشاء الاستضافة بنجاح، لكن تعذر إرسال رسالة خاصة في Discord (403: الرسائل الخاصة مغلقة في حسابك أو لا يوجد سيرفر مشترك مع البوت).',
+    discordHostCreatedDmNotConfiguredMsg:
+      'تم إنشاء الاستضافة بنجاح، لكن إشعارات Discord غير مفعّلة حالياً.',
     discordHostCreatedDmFailedMsg:
       'تم إنشاء الاستضافة بنجاح، لكن تعذر إرسال إشعار Discord.',
+    joinHyperSoftDiscordBtn: 'انضم إلى سيرفر HyperSoft لتفعيل الإشعارات',
     dismiss: 'إغلاق',
     totalHosts: 'الاستضافات الحالية',
     onlineHosts: 'الاستضافات المتصلة',
@@ -356,8 +365,8 @@ const dictionary = {
     connectingDiscord: 'Redirecting to Discord...',
     openDashboard: 'Dashboard',
     languageLabel: 'Language',
-    openMenuAria: 'Open main navigation menu',
-    closeMenuAria: 'Close main navigation menu',
+    openMenuAria: 'Open menu',
+    closeMenuAria: 'Close menu',
     // Homepage
     heroBadge: 'HyperHost — Powered by HyperSoft',
     heroTitle: 'Professional Discord & Telegram Bot Hosting Platform',
@@ -408,12 +417,21 @@ const dictionary = {
     discordLoginSuccessTitle: 'Signed in to HyperHost via Discord',
     discordLoginSuccessDesc: 'Login notification was sent to Discord.',
     discordLoginDmSentMsg: 'Login notification was sent to Discord.',
+    discordLoginDmForbiddenMsg:
+      'Login succeeded, but the Discord DM could not be delivered (403: Direct Messages are disabled in your Discord privacy settings or you do not share a server with the bot).',
+    discordLoginDmNotConfiguredMsg:
+      'Login succeeded, but Discord DM notifications are not configured.',
     discordLoginDmFailedMsg:
       'Login succeeded, but the Discord notification could not be delivered.',
     discordHostCreatedDmSentMsg:
       'Host created successfully, and notification was sent to Discord.',
+    discordHostCreatedDmForbiddenMsg:
+      'Host created successfully, but the Discord DM could not be delivered (403: Direct Messages are disabled in your Discord privacy settings or you do not share a server with the bot).',
+    discordHostCreatedDmNotConfiguredMsg:
+      'Host created successfully, but Discord DM notifications are not configured.',
     discordHostCreatedDmFailedMsg:
       'Host created successfully, but the Discord notification could not be delivered.',
+    joinHyperSoftDiscordBtn: 'Join HyperSoft Discord to enable DMs',
     dismiss: 'Dismiss',
     totalHosts: 'Current Hosts',
     onlineHosts: 'Online Hosts',
@@ -744,7 +762,9 @@ export function useI18n(): I18nContextValue {
 export const LanguageSwitcher: React.FC<{
   className?: string;
   compact?: boolean;
-}> = ({ className = '', compact = false }) => {
+  dropUp?: boolean;
+  onChanged?: () => void;
+}> = ({ className = '', compact = false, dropUp = false, onChanged }) => {
   const { locale, setLocale, t } = useI18n();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -781,7 +801,9 @@ export const LanguageSwitcher: React.FC<{
         <div
           role="listbox"
           aria-label={t.languageLabel}
-          className="absolute end-0 mt-2 w-48 rounded-xl bg-[#101220] border border-slate-800 shadow-2xl p-1.5 z-50 space-y-1"
+          className={`absolute end-0 ${
+            dropUp ? 'bottom-full mb-2' : 'mt-2'
+          } w-48 rounded-xl bg-[#101220] border border-slate-800 shadow-2xl p-1.5 z-50 space-y-1`}
         >
           <button
             type="button"
@@ -790,6 +812,7 @@ export const LanguageSwitcher: React.FC<{
             onClick={() => {
               setLocale('ar-IQ');
               setOpen(false);
+              onChanged?.();
             }}
             className={`w-full px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-between transition-colors cursor-pointer ${
               locale === 'ar-IQ'
@@ -808,6 +831,7 @@ export const LanguageSwitcher: React.FC<{
             onClick={() => {
               setLocale('en-US');
               setOpen(false);
+              onChanged?.();
             }}
             className={`w-full px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-between transition-colors cursor-pointer ${
               locale === 'en-US'

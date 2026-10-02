@@ -157,6 +157,46 @@ export interface BackupStorageAdapter {
   ): Promise<{ url: string; expiresAt: string }>;
 }
 
+export interface CreateRuntimeServerInput {
+  hostId: string;
+  hostPublicId: string;
+  hostName: string;
+  nodeId: string;
+  runtime: HostRuntimeCode;
+  runtimeVersion: string;
+  memoryLimitMb: number;
+  cpuLimitPercent: number;
+  diskLimitMb: number;
+  bootstrapScript: string;
+}
+
+export interface ProvisionedServer {
+  serverId: string;
+  provider: string;
+  ipAddress: string;
+  fqdn: string;
+  location: string;
+  status: 'CREATING' | 'BOOTING' | 'READY' | 'ERROR';
+}
+
+export interface BootstrapRuntimeNodeInput {
+  server: ProvisionedServer;
+  hostId: string;
+  nodeId: string;
+  controlPlaneWsUrl: string;
+  nodeToken: string;
+  bootstrapScript: string;
+}
+
+export interface RuntimeProvisioner {
+  readonly providerName: string;
+  isConfigured(): boolean;
+  createServer(input: CreateRuntimeServerInput): Promise<ProvisionedServer>;
+  waitUntilReady(serverId: string): Promise<ProvisionedServer>;
+  bootstrapNode(input: BootstrapRuntimeNodeInput): Promise<void>;
+  destroyServer(serverId: string): Promise<void>;
+}
+
 export interface NodeAgent {
   readonly nodeId: string;
   readonly fqdn: string;

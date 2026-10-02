@@ -27,6 +27,7 @@ export type DiscordDmDeliveryResult =
       ok: false;
       reason: DiscordDmFailureReason;
       statusCode?: number;
+      discordErrorCode?: number;
     };
 
 export interface DiscordLoginDmPayload {
@@ -423,18 +424,26 @@ async function deliverDiscordDirectMessage(
     );
 
     if (!dmChannelRes.ok) {
+      const errBody = (await dmChannelRes.json().catch(() => null)) as {
+        code?: number;
+        message?: string;
+      } | null;
       const reason = mapDiscordStatusToFailureReason(dmChannelRes.status);
       logger.warn('Discord DM notification failed', {
         context: contextLabel,
         step: 'open_dm_channel',
         status: dmChannelRes.status,
         reason,
+        discordErrorCode: errBody?.code ?? null,
         userId: safeUserId,
       });
       return {
         ok: false,
         reason,
         statusCode: dmChannelRes.status,
+        ...(typeof errBody?.code === 'number'
+          ? { discordErrorCode: errBody.code }
+          : {}),
       };
     }
 
@@ -454,7 +463,7 @@ async function deliverDiscordDirectMessage(
     }
 
     // Step 2: Send message to DM channel via Discord REST API v10
-    const sendRes = await fetch(
+    let sendRes = await fetch(
       `https://discord.com/api/v10/channels/${dmChannel.id}/messages`,
       {
         method: 'POST',
@@ -467,19 +476,44 @@ async function deliverDiscordDirectMessage(
       }
     );
 
+    // If Discord rejected components (400), retry once with embeds only
+    if (!sendRes.ok && sendRes.status === 400 && 'components' in messageBody) {
+      const { components: _unused, ...embedsOnlyBody } = messageBody;
+      sendRes = await fetch(
+        `https://discord.com/api/v10/channels/${dmChannel.id}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bot ${botToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(embedsOnlyBody),
+          signal: AbortSignal.timeout(6000),
+        }
+      );
+    }
+
     if (!sendRes.ok) {
+      const errBody = (await sendRes.json().catch(() => null)) as {
+        code?: number;
+        message?: string;
+      } | null;
       const reason = mapDiscordStatusToFailureReason(sendRes.status);
       logger.warn('Discord DM notification failed', {
         context: contextLabel,
         step: 'send_dm_message',
         status: sendRes.status,
         reason,
+        discordErrorCode: errBody?.code ?? null,
         userId: safeUserId,
       });
       return {
         ok: false,
         reason,
         statusCode: sendRes.status,
+        ...(typeof errBody?.code === 'number'
+          ? { discordErrorCode: errBody.code }
+          : {}),
       };
     }
 

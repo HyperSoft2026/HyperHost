@@ -69,6 +69,10 @@ export type HostRuntimeCode =
 export type HostStatusCode =
   | 'CREATING'
   | 'PENDING'
+  | 'PROVISIONING'
+  | 'BOOTSTRAPPING'
+  | 'NODE_CONNECTING'
+  | 'NODE_ONLINE'
   | 'INSTALLING'
   | 'OFFLINE'
   | 'STOPPED'
@@ -78,6 +82,28 @@ export type HostStatusCode =
   | 'STOPPING'
   | 'SUSPENDED'
   | 'ERROR';
+
+export type HostProvisioningStatusCode =
+  | 'PENDING'
+  | 'PROVISIONING'
+  | 'BOOTSTRAPPING'
+  | 'NODE_CONNECTING'
+  | 'NODE_ONLINE'
+  | 'READY'
+  | 'FAILED'
+  | 'DESTROYING'
+  | 'DESTROYED';
+
+export type RuntimeServerStatusCode =
+  | 'UNPROVISIONED'
+  | 'CREATING'
+  | 'BOOTING'
+  | 'READY'
+  | 'BOOTSTRAPPING'
+  | 'ONLINE'
+  | 'OFFLINE'
+  | 'ERROR'
+  | 'DESTROYED';
 
 export type NodeStatusCode =
   | 'ONLINE'
@@ -223,6 +249,14 @@ export interface HostSummaryDTO {
   nodeId: string | null;
   nodeName: string | null;
   nodeOnline: boolean;
+  provisionedServerId?: string | null;
+  provider?: string | null;
+  provisioningStatus?: string;
+  serverStatus?: string;
+  provisioningError?: string | null;
+  provisionedAt?: string | null;
+  bootstrappedAt?: string | null;
+  nodeConnectedAt?: string | null;
   memoryLimitMb: number;
   cpuLimitPercent: number;
   diskLimitMb: number;

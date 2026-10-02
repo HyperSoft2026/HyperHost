@@ -38,6 +38,10 @@ enum HostRuntime {
 enum HostStatus {
   CREATING
   PENDING
+  PROVISIONING
+  BOOTSTRAPPING
+  NODE_CONNECTING
+  NODE_ONLINE
   INSTALLING
   OFFLINE
   STOPPED
@@ -160,25 +164,30 @@ model Session {
 }
 
 model Node {
-  id              String           @id @default(cuid())
-  name            String           @unique
-  location        String
-  fqdn            String
-  ipAddress       String
-  daemonPort      Int              @default(8080)
-  status          NodeStatus       @default(OFFLINE)
-  isOnline        Boolean          @default(false)
-  agentTokenHash  String           @unique
-  maxMemoryMb     Int
-  maxDiskMb       Int
-  maxCpuPercent   Int              @default(1000)
-  lastHeartbeatAt DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                      String           @id @default(cuid())
+  name                    String           @unique
+  location                String
+  fqdn                    String
+  ipAddress               String
+  daemonPort              Int              @default(8080)
+  status                  NodeStatus       @default(OFFLINE)
+  isOnline                Boolean          @default(false)
+  agentTokenHash          String           @unique
+  bootstrapTokenEncrypted String?
+  dedicatedHostId         String?          @unique
+  provider                String?
+  provisionedServerId     String?
+  serverStatus            String           @default("OFFLINE")
+  maxMemoryMb             Int
+  maxDiskMb               Int
+  maxCpuPercent           Int              @default(1000)
+  lastHeartbeatAt         DateTime?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
 
-  hosts           Host[]
-  allocations     NodeAllocation[]
-  databases       Database[]
+  hosts                   Host[]
+  allocations             NodeAllocation[]
+  databases               Database[]
 
   @@index([status, isOnline])
 }
@@ -204,40 +213,49 @@ model NodeAllocation {
 }
 
 model Host {
-  id               String            @id @default(cuid())
-  publicId         String            @unique @default(cuid())
-  ownerId          String
-  nodeId           String?
-  name             String
-  description      String?
-  type             HostType          @default(DISCORD_BOT)
-  runtime          HostRuntime       @default(NODEJS)
-  runtimeVersion   String            @default("22")
-  status           HostStatus        @default(PENDING)
-  memoryLimitMb    Int               @default(512)
-  cpuLimitPercent  Int               @default(100)
-  diskLimitMb      Int               @default(2048)
-  startupCommand   String            @default("node index.js")
-  startupArgs      String[]          @default([])
-  workingDirectory String            @default("/home/container")
-  dockerImage      String            @default("ghcr.io/hypersoft2026/runtime-nodejs:22")
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id                  String            @id @default(cuid())
+  publicId            String            @unique @default(cuid())
+  ownerId             String
+  nodeId              String?
+  provisionedServerId String?
+  provider            String?
+  provisioningStatus  String            @default("PENDING")
+  serverStatus        String            @default("UNPROVISIONED")
+  provisioningError   String?
+  provisionedAt       DateTime?
+  bootstrappedAt      DateTime?
+  nodeConnectedAt     DateTime?
+  name                String
+  description         String?
+  type                HostType          @default(DISCORD_BOT)
+  runtime             HostRuntime       @default(NODEJS)
+  runtimeVersion      String            @default("22")
+  status              HostStatus        @default(PENDING)
+  memoryLimitMb       Int               @default(512)
+  cpuLimitPercent     Int               @default(100)
+  diskLimitMb         Int               @default(2048)
+  startupCommand      String            @default("node index.js")
+  startupArgs         String[]          @default([])
+  workingDirectory    String            @default("/home/container")
+  dockerImage         String            @default("ghcr.io/hypersoft2026/runtime-nodejs:22")
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
-  owner            User              @relation("HostOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  node             Node?             @relation(fields: [nodeId], references: [id], onDelete: SetNull)
-  environments     HostEnvironment[]
-  permissions      HostPermission[]
-  allocations      NodeAllocation[]
-  databases        Database[]
-  schedules        Schedule[]
-  backups          Backup[]
-  activityLogs     ActivityLog[]
+  owner               User              @relation("HostOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  node                Node?             @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  environments        HostEnvironment[]
+  permissions         HostPermission[]
+  allocations         NodeAllocation[]
+  databases           Database[]
+  schedules           Schedule[]
+  backups             Backup[]
+  activityLogs        ActivityLog[]
 
   @@index([publicId])
   @@index([ownerId])
   @@index([nodeId])
   @@index([status])
+  @@index([provisioningStatus])
 }
 
 model HostEnvironment {

@@ -25,6 +25,14 @@ const REDACTED_SUBSTRINGS = [
   'webhook',
   'discord_bot_token',
   'bottoken',
+  'private_key',
+  'privatekey',
+  'ssh_key',
+  'sshkey',
+  'bootstraptoken',
+  'bootstrap_token',
+  'bootstrapscript',
+  'bootstrap_script',
 ];
 
 function scrubSensitiveStrings(input: string): string {
@@ -37,7 +45,9 @@ function scrubSensitiveStrings(input: string): string {
       /https:\/\/(?:ptb\.|canary\.)?discord(?:app)?\.com\/api\/webhooks\/[^\s"']+/gi,
       'https://discord.com/api/webhooks/[REDACTED]'
     )
-    .replace(/\b(Bot|Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [REDACTED]');
+    .replace(/\b(Bot|Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [REDACTED]')
+    .replace(/([?&](?:token|node_token|secret)=)[^&\s"']+/gi, '$1[REDACTED]')
+    .replace(/\bhhnode_[A-Za-z0-9._~+/=-]+/gi, '[REDACTED]');
 }
 
 function sanitizeValue(value: unknown): unknown {
