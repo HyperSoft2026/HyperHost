@@ -58,7 +58,9 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
 
     setSubmitting(true);
     try {
-      const res = await apiFetch<{ host: { id: string } }>('/api/hosts', {
+      const res = await apiFetch<{
+        host: { id: string; publicId?: string; serverId?: string };
+      }>('/api/hosts', {
         method: 'POST',
         body: JSON.stringify({
           name: name.trim(),
@@ -72,7 +74,7 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
           diskLimitMb: Number(diskLimitMb),
         }),
       });
-      onCreated(res.host.id);
+      onCreated(res.host.serverId || res.host.publicId || res.host.id);
       onClose();
     } catch (err) {
       if (err instanceof ClientApiError) {

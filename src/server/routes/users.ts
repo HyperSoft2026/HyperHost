@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { requireAdmin, requireAuth } from '../auth';
 import { getPrismaOrThrow } from '../database';
 import { MAX_HOSTS_PER_USER } from '../../shared/types';
+import { formatEntityPublicId } from '../../shared/ids';
 
 export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
   // Get authenticated user's profile, host quota, and recent account activity
@@ -14,10 +15,10 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
       prisma.activityLog.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: 'desc' },
-        take: 20,
+        take: 25,
         include: {
           host: {
-            select: { id: true, name: true },
+            select: { id: true, publicId: true, name: true },
           },
         },
       }),
@@ -28,6 +29,7 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
       data: {
         user: {
           id: user.id,
+          publicId: formatEntityPublicId('usr', user.id, user.publicId),
           discordId: user.discordId,
           username: user.username,
           displayName: user.displayName,
@@ -40,11 +42,14 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
         },
         recentActivity: recentActivity.map((log) => ({
           id: log.id,
+          publicId: formatEntityPublicId('act', log.id),
+          userId: formatEntityPublicId('usr', user.id, user.publicId),
           action: log.action,
-          hostId: log.hostId,
+          hostId: log.host ? formatEntityPublicId('srv', log.host.id, log.host.publicId) : null,
           hostName: log.host?.name ?? null,
           metadata: log.metadata,
           ipAddress: log.ipAddress,
+          userAgent: log.userAgent,
           createdAt: log.createdAt.toISOString(),
         })),
       },
@@ -56,23 +61,36 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
     await requireAdmin(request);
     const prisma = getPrismaOrThrow();
 
-    const query = request.query as { page?: string; limit?: string };
+    const query = request.query as { page?: string; limit?: string; search?: string };
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 25));
     const skip = (page - 1) * limit;
+    const search = query.search?.trim();
+
+    const where = search
+      ? {
+          OR: [
+            { username: { contains: search, mode: 'insensitive' as const } },
+            { displayName: { contains: search, mode: 'insensitive' as const } },
+            { discordId: { contains: search } },
+            { publicId: { contains: search, mode: 'insensitive' as const } },
+          ],
+        }
+      : {};
 
     const [users, total] = await Promise.all([
       prisma.user.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
           _count: {
-            select: { ownedHosts: true },
+            select: { ownedHosts: true, sessions: true },
           },
         },
       }),
-      prisma.user.count(),
+      prisma.user.count({ where }),
     ]);
 
     return {
@@ -80,12 +98,14 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
       data: {
         items: users.map((u) => ({
           id: u.id,
+          publicId: formatEntityPublicId('usr', u.id, u.publicId),
           discordId: u.discordId,
           username: u.username,
           displayName: u.displayName,
           avatar: u.avatar,
           role: u.role,
           hostCount: u._count.ownedHosts,
+          sessionCount: u._count.sessions,
           maxHosts: MAX_HOSTS_PER_USER,
           createdAt: u.createdAt.toISOString(),
           updatedAt: u.updatedAt.toISOString(),
@@ -94,7 +114,7 @@ export async function registerUserRoutes(app: FastifyInstance): Promise<void> {
           page,
           limit,
           total,
-          totalPages: Math.ceil(total / limit),
+          totalPages: Math.max(1, Math.ceil(total / limit)),
         },
       },
     };

@@ -14,11 +14,14 @@ import {
   Settings,
   History,
   ArrowLeft,
+  ArrowRight,
   RefreshCw,
   AlertCircle,
   CheckCircle2,
   Plus,
   Trash2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import {
   HOST_PERMISSIONS,
@@ -62,9 +65,10 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
   onBack,
   onHostDeleted,
 }) => {
-  const { t } = useI18n();
+  const { t, isRtl } = useI18n();
   const [activeTab, setActiveTab] = useState<HostPanelTab>('console');
   const [hostData, setHostData] = useState<any | null>(null);
+  const [copiedId, setCopiedId] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [panelNotice, setPanelNotice] = useState<string | null>(null);
@@ -521,21 +525,46 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
     <div className="space-y-6">
       {/* Host Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-800">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"
               onClick={onBack}
               className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" />
+              {isRtl ? (
+                <ArrowRight className="w-4 h-4" />
+              ) : (
+                <ArrowLeft className="w-4 h-4" />
+              )}
             </button>
             <h1 className="text-xl font-bold text-white">
-              {hostData ? hostData.name : 'Unassigned Host Workspace'}
+              {hostData ? hostData.name : 'Host Workspace'}
             </h1>
+            {(hostData?.serverId || hostData?.publicId || hostId) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const sid = hostData?.serverId || hostData?.publicId || hostId;
+                  void navigator.clipboard?.writeText(sid);
+                  setCopiedId(true);
+                  setTimeout(() => setCopiedId(false), 1800);
+                }}
+                title={t.copyId}
+                dir="ltr"
+                className="px-2.5 py-1 rounded-lg bg-[#121424] hover:bg-[#191C32] border border-violet-500/30 text-[11px] font-mono text-violet-300 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>{hostData?.serverId || hostData?.publicId || hostId}</span>
+                {copiedId ? (
+                  <Check className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3 h-3 text-slate-400" />
+                )}
+              </button>
+            )}
           </div>
           <div className="text-xs text-slate-400 ps-9">
-            <span>{t.statusLabel}: {hostData?.status ?? 'PENDING (No Runtime Node Connected)'}</span>
+            <span>{t.statusLabel}: {hostData?.status ?? 'PENDING'}</span>
             <span className="mx-2" aria-hidden="true">·</span>
             <span>{t.runtimeLabel}: {hostData?.runtime ?? 'NODEJS'} v{hostData?.runtimeVersion ?? '22'}</span>
             <span className="mx-2" aria-hidden="true">·</span>
@@ -1200,18 +1229,21 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   {databases.map((db) => (
                     <div
                       key={db.id}
-                      className="p-3.5 rounded-lg bg-[#090A10] border border-slate-800 flex items-center justify-between text-xs"
+                      className="p-3.5 rounded-lg bg-[#090A10] border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs"
                     >
                       <div>
+                        <span className="font-mono text-[11px] text-violet-300 me-2" dir="ltr">
+                          {db.databaseId || db.id}
+                        </span>
                         <span className="font-mono font-semibold text-white">{db.name}</span>
                         <span className="mx-2 text-slate-500">·</span>
                         <span className="text-indigo-300">{db.engine}</span>
                         <span className="mx-2 text-slate-500">·</span>
-                        <span className="font-mono text-slate-400">
+                        <span className="font-mono text-slate-400" dir="ltr">
                           {db.hostAddress}:{db.port}
                         </span>
                       </div>
-                      <span className="text-emerald-400">{db.status}</span>
+                      <span className="text-emerald-400 font-mono">{db.status}</span>
                     </div>
                   ))}
                 </div>
@@ -1275,12 +1307,15 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   {schedules.map((s) => (
                     <div
                       key={s.id}
-                      className="p-3.5 rounded-lg bg-[#090A10] border border-slate-800 flex items-center justify-between text-xs"
+                      className="p-3.5 rounded-lg bg-[#090A10] border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs"
                     >
                       <div>
+                        <span className="font-mono text-[11px] text-violet-300 me-2" dir="ltr">
+                          {s.scheduleId || s.id}
+                        </span>
                         <span className="font-semibold text-white">{s.name}</span>
                         <span className="mx-2 text-slate-500">·</span>
-                        <span className="font-mono text-indigo-300">{s.cronExpression}</span>
+                        <span className="font-mono text-indigo-300" dir="ltr">{s.cronExpression}</span>
                         <span className="mx-2 text-slate-500">·</span>
                         <span className="text-slate-400">{s.taskType}</span>
                       </div>
@@ -1330,16 +1365,19 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   {backups.map((b) => (
                     <div
                       key={b.id}
-                      className="p-3.5 rounded-lg bg-[#090A10] border border-slate-800 flex items-center justify-between text-xs"
+                      className="p-3.5 rounded-lg bg-[#090A10] border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs"
                     >
                       <div>
+                        <span className="font-mono text-[11px] text-violet-300 me-2" dir="ltr">
+                          {b.backupId || b.id}
+                        </span>
                         <span className="font-semibold text-white">{b.name}</span>
                         <span className="mx-2 text-slate-500">·</span>
-                        <span className="font-mono tabular-nums text-slate-400">
+                        <span className="font-mono tabular-nums text-slate-400" dir="ltr">
                           {b.sizeBytes} Bytes
                         </span>
                       </div>
-                      <span className="text-emerald-400">{b.status}</span>
+                      <span className="text-emerald-400 font-mono">{b.status}</span>
                     </div>
                   ))}
                 </div>
@@ -1511,9 +1549,12 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                   {activityLogs.map((log) => (
                     <div
                       key={log.id}
-                      className="p-3.5 rounded-lg bg-[#090A10] border border-slate-800 flex items-center justify-between text-xs"
+                      className="p-3.5 rounded-lg bg-[#090A10] border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs"
                     >
                       <div>
+                        <span className="font-mono text-[11px] text-violet-300 me-2" dir="ltr">
+                          {log.activityId || log.id}
+                        </span>
                         <span className="font-semibold text-white">{log.action}</span>
                         <span className="mx-2 text-slate-500">·</span>
                         <span className="text-slate-400">
@@ -1522,11 +1563,11 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                         {log.ipAddress && (
                           <>
                             <span className="mx-2 text-slate-500">·</span>
-                            <span className="font-mono text-slate-500">{log.ipAddress}</span>
+                            <span className="font-mono text-slate-500" dir="ltr">{log.ipAddress}</span>
                           </>
                         )}
                       </div>
-                      <span className="font-mono text-slate-500 tabular-nums">
+                      <span className="font-mono text-slate-500 tabular-nums" dir="ltr">
                         {log.createdAt}
                       </span>
                     </div>

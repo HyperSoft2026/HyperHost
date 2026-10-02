@@ -115,14 +115,16 @@ export interface AuthorizedHostContext {
 
 export async function requireHostPermission(
   request: FastifyRequest,
-  hostId: string,
+  hostIdentifier: string,
   requiredScope?: HostPermissionScope
 ): Promise<AuthorizedHostContext> {
   const auth = await requireAuth(request);
   const prisma = getPrismaOrThrow();
 
-  const host = await prisma.host.findUnique({
-    where: { id: hostId },
+  const host = await prisma.host.findFirst({
+    where: {
+      OR: [{ id: hostIdentifier }, { publicId: hostIdentifier }],
+    },
   });
 
   if (!host) {
@@ -181,15 +183,26 @@ const FORBIDDEN_METADATA_KEYS = [
   'refreshtoken',
   'databaseurl',
   'database_url',
+  'encryptionkey',
+  'encryption_key',
+  'sessionsecret',
+  'session_secret',
+  'clientsecret',
+  'client_secret',
+  'bottoken',
+  'bot_token',
+  'webhook',
   'value',
 ];
 
 function sanitizeActivityValue(val: unknown): unknown {
   if (typeof val === 'string') {
-    return val.replace(
-      /\b(postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^\s"']+/gi,
-      '$1://[REDACTED]'
-    );
+    return val
+      .replace(
+        /\b(postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^\s"']+/gi,
+        '$1://[REDACTED]'
+      )
+      .replace(/https:\/\/discord(?:app)?\.com\/api\/webhooks\/[^\s"']+/gi, '[REDACTED_WEBHOOK]');
   }
   if (Array.isArray(val)) {
     return val.map(sanitizeActivityValue);
@@ -200,7 +213,7 @@ function sanitizeActivityValue(val: unknown): unknown {
   return val;
 }
 
-function sanitizeActivityMetadata(
+export function sanitizeActivityMetadata(
   meta: Record<string, unknown>
 ): Record<string, unknown> {
   const clean: Record<string, unknown> = {};

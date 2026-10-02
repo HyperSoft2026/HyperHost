@@ -96,6 +96,7 @@ enum ScheduleTaskType {
 
 model User {
   id              String           @id @default(cuid())
+  publicId        String           @unique @default(cuid())
   discordId       String           @unique
   username        String
   displayName     String
@@ -111,6 +112,7 @@ model User {
   hostPermissions HostPermission[]
   activityLogs    ActivityLog[]
 
+  @@index([publicId])
   @@index([discordId])
   @@index([role])
 }
@@ -198,6 +200,7 @@ model NodeAllocation {
 
 model Host {
   id               String            @id @default(cuid())
+  publicId         String            @unique @default(cuid())
   ownerId          String
   nodeId           String?
   name             String
@@ -226,6 +229,7 @@ model Host {
   backups          Backup[]
   activityLogs     ActivityLog[]
 
+  @@index([publicId])
   @@index([ownerId])
   @@index([nodeId])
   @@index([status])

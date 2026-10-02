@@ -13,9 +13,12 @@ import {
   maskSecret,
 } from '../crypto';
 import { runtimeRegistry } from '../../runtime/registry';
+import { sendDiscordHostCreatedNotification } from '../discord-notify';
+import { formatEntityPublicId, generatePublicId } from '../../shared/ids';
 import {
   HOST_PERMISSIONS,
   MAX_HOSTS_PER_USER,
+  normalizeLocale,
   RUNTIME_CATALOG,
   type HostPermissionScope,
   type HostSummaryDTO,
@@ -80,10 +83,10 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
           ],
         },
         orderBy: { createdAt: 'desc' },
-        take: 15,
+        take: 25,
         include: {
-          user: { select: { username: true, displayName: true } },
-          host: { select: { id: true, name: true } },
+          user: { select: { id: true, publicId: true, username: true, displayName: true } },
+          host: { select: { id: true, publicId: true, name: true } },
         },
       }),
       prisma.host.count({ where: { ownerId: user.id } }),
@@ -93,9 +96,11 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       const nodeConnected = runtimeRegistry.isNodeConnected(h.nodeId);
       const effectiveStatus = nodeConnected ? h.status : h.status === 'ONLINE' ? 'OFFLINE' : h.status;
       const primary = h.allocations[0] || null;
+      const serverPublicId = formatEntityPublicId('srv', h.id, h.publicId);
 
       return {
         id: h.id,
+        publicId: serverPublicId,
         ownerId: h.ownerId,
         name: h.name,
         description: h.description,
@@ -132,16 +137,25 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
         },
         availableNodes: nodes.map((n) => ({
           ...n,
+          publicId: formatEntityPublicId('nod', n.id),
           liveConnected: runtimeRegistry.isNodeConnected(n.id),
         })),
         runtimes: RUNTIME_CATALOG,
         recentActivity: recentActivity.map((log) => ({
           id: log.id,
+          publicId: formatEntityPublicId('act', log.id),
+          userId: log.user
+            ? formatEntityPublicId('usr', log.user.id, log.user.publicId)
+            : null,
           action: log.action,
-          hostId: log.hostId,
+          hostId: log.host
+            ? formatEntityPublicId('srv', log.host.id, log.host.publicId)
+            : log.hostId,
           hostName: log.host?.name ?? null,
           actorName: log.user?.displayName ?? log.user?.username ?? 'System',
           metadata: log.metadata,
+          ipAddress: log.ipAddress,
+          userAgent: log.userAgent,
           createdAt: log.createdAt.toISOString(),
         })),
       },
@@ -190,8 +204,11 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     // Never pretend a Host is ONLINE if no Runtime Node is connected; create as PENDING
     const initialStatus = nodeIsLive ? 'INSTALLING' : 'PENDING';
 
+    const generatedServerId = generatePublicId('srv');
+
     const createdHost = await prisma.host.create({
       data: {
+        publicId: generatedServerId,
         ownerId: user.id,
         nodeId: selectedNodeId,
         name: body.name,
@@ -209,6 +226,12 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
         dockerImage,
       },
     });
+
+    const serverPublicId = formatEntityPublicId(
+      'srv',
+      createdHost.id,
+      createdHost.publicId
+    );
 
     // If a node was selected and has an available allocation, bind primary allocation
     if (selectedNodeId) {
@@ -233,6 +256,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       hostId: createdHost.id,
       action: 'Created Host',
       metadata: {
+        serverId: serverPublicId,
         name: createdHost.name,
         type: createdHost.type,
         runtime: createdHost.runtime,
@@ -244,12 +268,32 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       request,
     });
 
+    const requestLocale = normalizeLocale(
+      (request.headers['x-hyperhost-locale'] as string | undefined) ||
+        request.cookies?.['hyperhost_locale']
+    );
+
+    // Dispatch fail-safe Discord DM notification after PostgreSQL persistence succeeds
+    void sendDiscordHostCreatedNotification({
+      discordId: user.discordId,
+      username: user.username,
+      hostId: createdHost.id,
+      serverId: serverPublicId,
+      hostName: createdHost.name,
+      runtime: createdHost.runtime,
+      runtimeVersion: createdHost.runtimeVersion,
+      status: createdHost.status,
+      createdAt: createdHost.createdAt,
+      locale: requestLocale,
+    });
+
     reply.status(201);
     return {
       success: true,
       data: {
         host: {
           ...createdHost,
+          publicId: serverPublicId,
           createdAt: createdHost.createdAt.toISOString(),
           updatedAt: createdHost.updatedAt.toISOString(),
         },
@@ -297,12 +341,18 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const nodeConnected = runtimeRegistry.isNodeConnected(fullHost.nodeId);
+    const serverPublicId = formatEntityPublicId(
+      'srv',
+      fullHost.id,
+      fullHost.publicId
+    );
 
     return {
       success: true,
       data: {
         host: {
           id: fullHost.id,
+          publicId: serverPublicId,
           ownerId: fullHost.ownerId,
           name: fullHost.name,
           description: fullHost.description,
@@ -310,6 +360,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
           runtime: fullHost.runtime,
           runtimeVersion: fullHost.runtimeVersion,
           status: nodeConnected ? fullHost.status : fullHost.status === 'ONLINE' ? 'OFFLINE' : fullHost.status,
+          nodeOnline: nodeConnected,
           memoryLimitMb: fullHost.memoryLimitMb,
           cpuLimitPercent: fullHost.cpuLimitPercent,
           diskLimitMb: fullHost.diskLimitMb,
@@ -320,6 +371,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
           node: fullHost.node
             ? {
                 ...fullHost.node,
+                publicId: formatEntityPublicId('nod', fullHost.node.id),
                 liveConnected: nodeConnected,
               }
             : null,
@@ -1074,6 +1126,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       data: {
         databases: databases.map((db) => ({
           id: db.id,
+          publicId: formatEntityPublicId('db', db.id),
           name: db.name,
           engine: db.engine,
           hostAddress: db.hostAddress,
@@ -1128,7 +1181,15 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
         },
       },
       include: {
-        users: true,
+        users: {
+          select: {
+            id: true,
+            username: true,
+            remoteHost: true,
+            privileges: true,
+            createdAt: true,
+          },
+        },
       },
     });
 
@@ -1137,7 +1198,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       hostId: host.id,
       action: 'Provisioned Host Database',
       metadata: {
-        databaseId: createdDb.id,
+        databaseId: formatEntityPublicId('db', createdDb.id),
         name: createdDb.name,
         engine: createdDb.engine,
       },
@@ -1148,7 +1209,10 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     return {
       success: true,
       data: {
-        database: createdDb,
+        database: {
+          ...createdDb,
+          publicId: formatEntityPublicId('db', createdDb.id),
+        },
       },
     };
   });
@@ -1207,7 +1271,12 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
 
     return {
       success: true,
-      data: { schedules },
+      data: {
+        schedules: schedules.map((s) => ({
+          ...s,
+          publicId: formatEntityPublicId('sch', s.id),
+        })),
+      },
     };
   });
 
@@ -1297,6 +1366,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       data: {
         backups: backups.map((b) => ({
           id: b.id,
+          publicId: formatEntityPublicId('bkp', b.id),
           name: b.name,
           status: b.status,
           sizeBytes: Number(b.sizeBytes),
@@ -1626,6 +1696,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       success: true,
       data: {
         id: host.id,
+        publicId: formatEntityPublicId('srv', host.id, host.publicId),
         name: host.name,
         description: host.description,
         type: host.type,
@@ -1699,6 +1770,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
           user: {
             select: {
               id: true,
+              publicId: true,
               discordId: true,
               username: true,
               displayName: true,
@@ -1715,12 +1787,19 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
       data: {
         items: logs.map((l) => ({
           id: l.id,
+          publicId: formatEntityPublicId('act', l.id),
+          userId: l.user
+            ? formatEntityPublicId('usr', l.user.id, l.user.publicId)
+            : null,
+          hostId: formatEntityPublicId('srv', host.id, host.publicId),
           action: l.action,
           metadata: l.metadata,
           ipAddress: l.ipAddress,
+          userAgent: l.userAgent,
           actor: l.user
             ? {
                 id: l.user.id,
+                publicId: formatEntityPublicId('usr', l.user.id, l.user.publicId),
                 username: l.user.username,
                 displayName: l.user.displayName,
                 avatar: l.user.avatar,
@@ -1732,7 +1811,7 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
           page,
           limit,
           total,
-          totalPages: Math.ceil(total / limit),
+          totalPages: Math.max(1, Math.ceil(total / limit)),
         },
       },
     };

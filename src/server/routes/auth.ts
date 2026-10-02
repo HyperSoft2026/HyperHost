@@ -26,6 +26,7 @@ import {
   normalizeLocale,
   type SupportedLocale,
 } from '../../shared/types';
+import { formatEntityPublicId, generatePublicId } from '../../shared/ids';
 
 const OAUTH_STATE_COOKIE = 'hyperhost_oauth_state';
 const OAUTH_LOCALE_COOKIE = 'hyperhost_locale';
@@ -349,9 +350,13 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         displayName,
         avatar: avatarUrl,
         email: discordUser.email ?? null,
+        ...(existingUser && !existingUser.publicId.startsWith('usr_')
+          ? { publicId: formatEntityPublicId('usr', existingUser.id, existingUser.publicId) }
+          : {}),
         ...(isAdminByEnv ? { role: 'ADMIN' } : {}),
       },
       create: {
+        publicId: generatePublicId('usr'),
         discordId: discordUser.id,
         username: discordUser.username,
         displayName,
@@ -440,6 +445,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       callbackKey: stateHash,
       discordId: user.discordId,
       username: user.username,
+      userPublicId: formatEntityPublicId('usr', user.id, user.publicId),
       locale: activeLocale,
       timestamp: new Date(),
     });
@@ -505,6 +511,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         csrfToken: ctx.session.csrfToken,
         user: {
           id: ctx.user.id,
+          publicId: formatEntityPublicId('usr', ctx.user.id, ctx.user.publicId),
           discordId: ctx.user.discordId,
           username: ctx.user.username,
           displayName: ctx.user.displayName,

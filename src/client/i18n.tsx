@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Globe } from 'lucide-react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { Globe, ChevronDown } from 'lucide-react';
 import {
   normalizeLocale,
   supportedLocales,
@@ -12,93 +12,403 @@ export type Locale = SupportedLocale;
 const STORAGE_KEY = 'hyperhost_locale';
 
 const dictionary = {
+  'ar-IQ': {
+    localeCode: 'ar-IQ' as SupportedLocale,
+    dir: 'rtl' as 'ltr' | 'rtl',
+    langName: 'العربية (ar-IQ)',
+    shortLang: 'العربية',
+    brandSubtitle: 'Powered by HyperSoft',
+    initializing: 'جارٍ تهيئة منصة HyperHost...',
+    // Public Navigation
+    navHome: 'الرئيسية',
+    navServices: 'الخدمات',
+    navProjects: 'المشاريع',
+    navAbout: 'من نحن',
+    navContact: 'تواصل معنا',
+    navPrivacy: 'سياسة الخصوصية',
+    navTerms: 'شروط الاستخدام',
+    loginWithDiscord: 'تسجيل الدخول عبر Discord',
+    connectingDiscord: 'جارٍ التحويل إلى Discord...',
+    openDashboard: 'لوحة التحكم',
+    languageLabel: 'اللغة',
+    openMenuAria: 'فتح القائمة الرئيسية',
+    closeMenuAria: 'إغلاق القائمة الرئيسية',
+    // Homepage
+    heroBadge: 'HyperHost — Powered by HyperSoft',
+    heroTitle: 'منصة احترافية لاستضافة بوتات Discord وTelegram',
+    heroDescription:
+      'بيئة سحابية متخصصة لإدارة واستضافة بوتات Discord وTelegram وتطبيقات Node.js وPython وJava وGo وRust مع عزل كامل بين طبقة التحكم وطبقة التشغيل، وتشفير متغيرات البيئة بمعيار AES-256-GCM، وصلاحيات دقيقة للفرق.',
+    exploreServicesBtn: 'استعراض الخدمات',
+    viewArchitectureBtn: 'معمارية المنصة',
+    supportedWorkloadsTitle: 'بيئات التشغيل واللغات المدعومة',
+    supportedWorkloadsDesc:
+      'تدعم HyperHost تشغيل البوتات والخدمات الخلفية عبر حاويات معزولة تُدار بواسطة Runtime Plane مع تخصيص دقيق للمعالج والذاكرة والتخزين.',
+    runtimeAvailabilityNote:
+      'ملاحظة تقنية: يتم تنفيذ الحاويات الفعلي عند ربط عقدة تشغيل (Runtime Node) نشطة. لا تعرض المنصة أي حالة اتصال أو قياسات وهمية عند عدم وجود عقدة تشغيل متصلة.',
+    discordBotHostingTitle: 'استضافة بوتات Discord',
+    discordBotHostingDesc:
+      'دعم كامل لبوتات Discord المبنية على Discord.js وEris وPycord وJDA وSerenity مع إدارة آمنة للتوكنات وإعادة تشغيل مجدولة.',
+    telegramBotHostingTitle: 'استضافة بوتات Telegram',
+    telegramBotHostingDesc:
+      'تشغيل مستقر لبوتات Telegram باستخدام Telegraf وGrammy وAiogram وTelebot مع طرفية WebSocket مباشرة وسجلات تدقيق.',
+    architecturePillarsTitle: 'ركائز الأمان والهندسة في HyperHost',
+    pillarControlRuntimeTitle: 'فصل طبقة التحكم عن طبقة التشغيل',
+    pillarControlRuntimeDesc:
+      'خادم التحكم (Fastify + PostgreSQL) يدير المصادقة والصلاحيات والجدولة دون تنفيذ أي كود مستخدم على نفس الخادم.',
+    pillarEncryptionTitle: 'تشفير الأسرار بمعيار AES-256-GCM',
+    pillarEncryptionDesc:
+      'تُشفّر متغيرات البيئة وتوكنات البوتات قبل حفظها في قاعدة البيانات ولا تُكشف أبداً في سجلات النشاط أو واجهات البرمجة.',
+    pillarRbacTitle: '21 صلاحية دقيقة للمتعاونين',
+    pillarRbacDesc:
+      'امنح أعضاء فريقك صلاحيات محددة على مستوى كل استضافة (الطرفية، الملفات، الإقلاع، الشبكة، النسخ الاحتياطي) عبر معرّف Discord.',
+    pillarIdentityTitle: 'معرّفات عامة غير تسلسلية',
+    pillarIdentityDesc:
+      'يمتلك كل مستخدم واستضافة معرّفاً عاماً آمناً وغير تسلسلي (usr_ / srv_) لحماية الهوية الداخلية في قاعدة البيانات.',
+    // Dashboard & Navigation
+    navDashboard: 'لوحة التحكم',
+    navHostPanel: 'إدارة الاستضافة',
+    navAdmin: 'إدارة النظام (Control Plane)',
+    accountQuota: 'حصة الحساب',
+    hostsWord: 'استضافات',
+    maxQuotaLabel: 'الحد الأقصى: 10 Hosts',
+    signOut: 'تسجيل الخروج',
+    controlPlaneHeader: 'لوحة تحكم HyperHost',
+    createHost: 'إنشاء استضافة جديدة',
+    welcomeUser: 'مرحباً،',
+    publicUserIdLabel: 'معرّف المستخدم العام (Public User ID)',
+    discordIdLabel: 'معرّف Discord',
+    currentHostsCountLabel: 'عدد الاستضافات الحالية',
+    dashboardSubtitle:
+      'أدر استضافاتك، وتابع حالة بيئة التشغيل، واضبط إعدادات الإقلاع ومتغيرات البيئة المشفرة.',
+    discordLoginSuccessTitle: 'تم تسجيل الدخول بنجاح إلى HyperHost',
+    discordLoginSuccessDesc:
+      'جلستك الآن نشطة ومؤمّنة، وتم إرسال إشعار تسجيل الدخول عبر رسالة خاصة (DM) في Discord.',
+    dismiss: 'إغلاق',
+    totalHosts: 'الاستضافات الحالية',
+    onlineHosts: 'الاستضافات المتصلة',
+    offlinePending: 'غير متصلة / قيد الانتظار',
+    cpuUsage: 'استهلاك المعالج',
+    noMetricsAvailable: 'لا توجد قياسات متاحة',
+    memoryQuota: 'مجموع الذاكرة المخصصة',
+    storageQuota: 'مجموع التخزين المخصص',
+    myHosts: 'استضافاتي',
+    usedOf: 'مستخدمة',
+    noHostsTitle: 'لا توجد استضافات منشأة حالياً',
+    noHostsDesc:
+      'أنشئ أول استضافة لبوت Discord أو بوت Telegram أو تطبيق Node.js أو Python أو Java أو Go أو Rust.',
+    serverIdLabel: 'Server ID',
+    createdAtLabel: 'تاريخ الإنشاء',
+    cpuLimit: 'حد المعالج',
+    ramLimit: 'حد الذاكرة',
+    nodeLabel: 'العقدة',
+    runtimeUnavailable: 'Runtime unavailable · بيئة التشغيل غير متاحة',
+    runtimeNodeUnavailable: 'Runtime unavailable',
+    openBtn: 'فتح (Open)',
+    manage: 'إدارة (Manage)',
+    settingsActionBtn: 'الإعدادات (Settings)',
+    recentActivity: 'سجل النشاطات الأخير',
+    noRecentActivity: 'لا توجد نشاطات مسجلة في قاعدة البيانات حتى الآن.',
+    copied: 'تم النسخ',
+    copyId: 'نسخ المعرّف',
+    // Create Host Modal
+    createNewHostTitle: 'إنشاء استضافة جديدة (Create Host)',
+    quotaUsage: 'استهلاك الحصة',
+    noLiveNodesNotice:
+      'لا توجد عقدة تشغيل متصلة حالياً. سيتم حفظ الاستضافة في قاعدة البيانات بحالة PENDING (Runtime unavailable) حتى يتم ربط عقدة تشغيل.',
+    hostNameLabel: 'اسم الاستضافة (Host Name)',
+    hostNamePlaceholder: 'مثال: Aegis Discord Bot',
+    appTypeLabel: 'نوع التطبيق',
+    runtimeEnvLabel: 'بيئة التشغيل (Runtime)',
+    runtimeVersionLabel: 'إصدار البيئة',
+    descriptionOptionalLabel: 'الوصف (اختياري)',
+    descriptionPlaceholder: 'وصف مختصر لوظيفة البوت أو الخدمة',
+    targetNodeLabel: 'عقدة التشغيل المستهدفة',
+    unassignedNodeOption: 'غير معيّن — الاحتفاظ بحالة PENDING حتى توفر عقدة',
+    cpuLimitPercentLabel: 'حد المعالج CPU (%)',
+    memoryLimitMbLabel: 'حد الذاكرة RAM (MB)',
+    diskLimitMbLabel: 'حد قرص التخزين NVMe (MB)',
+    cancel: 'إلغاء',
+    creatingHost: 'جارٍ الإنشاء...',
+    // Host Panel Tabs
+    tabConsole: 'الطرفية (Console)',
+    tabFiles: 'الملفات (Files)',
+    tabStartup: 'الإقلاع (Startup)',
+    tabNetwork: 'الشبكة (Network)',
+    tabMetrics: 'القياسات (Metrics)',
+    tabManagement: 'التحكم (Management)',
+    tabDatabases: 'قواعد البيانات (Databases)',
+    tabSchedules: 'الجدولة (Schedules)',
+    tabBackups: 'النسخ الاحتياطي (Backups)',
+    tabAdministration: 'الإدارة (Administration)',
+    tabUsers: 'المستخدمون (Users)',
+    tabSettings: 'الإعدادات (Settings)',
+    tabActivity: 'النشاطات (Activity)',
+    statusLabel: 'الحالة',
+    runtimeLabel: 'بيئة التشغيل',
+    limitsLabel: 'الموارد المخصصة',
+    startBtn: 'تشغيل',
+    restartBtn: 'إعادة تشغيل',
+    stopBtn: 'إيقاف',
+    wsConsoleStream: 'بث الطرفية المباشر (WebSocket Console)',
+    wsConnected: 'متصل',
+    wsConnecting: 'جارٍ الاتصال...',
+    clearConsole: 'مسح السجل',
+    reconnect: 'إعادة الاتصال',
+    consoleUnavailableDesc:
+      'لا توجد عقدة تشغيل متصلة حالياً لبث مخرجات stdout/stderr لهذه الاستضافة (Runtime unavailable).',
+    stdinPlaceholderConnected: 'أرسل أمراً إلى حاوية التشغيل (stdin)...',
+    stdinPlaceholderDisconnected: 'بيئة التشغيل غير متاحة — الإدخال معطّل',
+    sendBtn: 'إرسال',
+    remoteFileManager: 'مدير ملفات الاستضافة',
+    workingPath: 'مسار العمل',
+    newFileOrFolderPlaceholder: 'اسم الملف أو المجلد الجديد',
+    createFileBtn: 'إنشاء ملف',
+    createFolderBtn: 'إنشاء مجلد',
+    fileColName: 'الاسم',
+    fileColType: 'النوع',
+    fileColSize: 'الحجم',
+    fileColModified: 'تاريخ التعديل',
+    fileTypeDir: 'مجلد',
+    fileTypeFile: 'ملف',
+    filesUnavailableDesc:
+      'تُحفظ ملفات الاستضافة حصرياً داخل وحدات تخزين عقد التشغيل المعزولة وليس على خادم الويب.',
+    startupVaultTitle: 'إعدادات الإقلاع وخزنة متغيرات البيئة المشفرة',
+    startupVaultDesc:
+      'اضبط أمر التشغيل، وإصدار البيئة، ومسار العمل، والمتغيرات المشفرة بمعيار AES-256-GCM. لا يتم كشف القيم السرية أبداً في سجلات النشاط.',
+    startupCommandLabel: 'أمر الإقلاع (Startup Command)',
+    startupArgsLabel: 'المعاملات الإضافية (Arguments)',
+    workingDirLabel: 'مسار العمل داخل الحاوية',
+    envVarsTitle: 'متغيرات البيئة (Environment Variables)',
+    secretLabel: 'سري (AES-256-GCM)',
+    plainLabel: 'نص عادي',
+    envKeyPlaceholder: 'KEY_NAME (مثال: DISCORD_TOKEN)',
+    envValPlaceholder: 'القيمة السرية أو الإعداد',
+    addVariableBtn: 'إضافة متغير',
+    saveStartupBtn: 'حفظ إعدادات الإقلاع',
+    networkTitle: 'تخصيصات الشبكة والمنافذ (Allocations)',
+    networkDesc:
+      'عناوين IP والمنافذ والبروتوكولات المخصصة لهذه الاستضافة.',
+    noAllocations:
+      'لا توجد منافذ شبكة مخصصة بعد.',
+    netColIp: 'عنوان IP',
+    netColPort: 'المنفذ',
+    netColProto: 'البروتوكول',
+    netColRole: 'الدور',
+    netColStatus: 'الحالة',
+    netRolePrimary: 'أساسي',
+    netRoleSecondary: 'ثانوي',
+    metricsTitle: 'قياسات موارد الحاوية (Telemetry)',
+    metricsDesc:
+      'قراءات حقيقية وفورية لاستهلاك المعالج والذاكرة والقرص والشبكة من عقدة التشغيل.',
+    metricsUnavailableDesc:
+      'بيئة التشغيل غير متاحة حالياً (Runtime unavailable). لا تقوم منصة HyperHost بعرض أي أرقام وهمية للمعالج أو الذاكرة.',
+    metricsCpuLoad: 'حمل المعالج',
+    metricsMemoryUsage: 'استهلاك الذاكرة',
+    metricsUptime: 'مدة التشغيل',
+    managementTitle: 'إدارة دورة حياة الحاوية والعمليات',
+    managementDesc:
+      'إرسال أوامر التشغيل والإيقاف وإعادة البناء إلى عقدة التشغيل.',
+    mgmtStartTitle: 'تشغيل الاستضافة',
+    mgmtStartDesc: 'بدء تشغيل الحاوية',
+    mgmtStopTitle: 'إيقاف الاستضافة',
+    mgmtStopDesc: 'إرسال إشارة إيقاف آمنة SIGTERM',
+    mgmtRestartTitle: 'إعادة تشغيل الاستضافة',
+    mgmtRestartDesc: 'إيقاف وإعادة تشغيل متتابعة',
+    mgmtKillTitle: 'إنهاء فوري (Kill)',
+    mgmtKillDesc: 'إيقاف إجباري فوري SIGKILL',
+    mgmtReinstallTitle: 'إعادة تثبيت الصورة',
+    mgmtReinstallDesc: 'إعادة بناء حاوية التشغيل',
+    databasesTitle: 'قواعد بيانات الاستضافة',
+    databasesDesc:
+      'طبقة إدارة وتخصيص قواعد بيانات PostgreSQL وMySQL وMongoDB وRedis.',
+    provisionDatabaseBtn: 'إنشاء قاعدة بيانات',
+    noDatabases: 'لا توجد قواعد بيانات مخصصة لهذه الاستضافة.',
+    schedulesTitle: 'المهام المجدولة (Cron Schedules)',
+    schedulesDesc:
+      'مهام مجدولة تعمل تلقائياً عبر مجدول لوحة التحكم (Control Plane Scheduler).',
+    schedNamePlaceholder: 'إعادة تشغيل يومية',
+    schedTaskRestart: 'إعادة تشغيل الاستضافة',
+    schedTaskStart: 'تشغيل الاستضافة',
+    schedTaskStop: 'إيقاف الاستضافة',
+    schedTaskCommand: 'تنفيذ أمر',
+    schedTaskBackup: 'إنشاء نسخة احتياطية',
+    schedStatusScheduled: 'مجدولة',
+    addScheduleBtn: 'إضافة مهمة مجدولة',
+    noSchedules: 'لا توجد مهام مجدولة لهذه الاستضافة.',
+    backupsTitle: 'النسخ الاحتياطية (S3 Object Storage)',
+    backupsDesc:
+      'إنشاء واستعادة وتحميل وحذف النسخ الاحتياطية المؤرشفة.',
+    backupNamePlaceholder: 'نسخة احتياطية قبل التحديث',
+    createBackupBtn: 'إنشاء نسخة احتياطية',
+    noBackups: 'لا توجد نسخ احتياطية مسجلة لهذه الاستضافة.',
+    collaboratorsTitle: 'المتعاونون والصلاحيات الدقيقة',
+    collaboratorsDesc:
+      'امنح صلاحيات محددة للمتعاونين عبر معرّف Discord ID الخاص بهم (21 صلاحية دقيقة).',
+    collaboratorDiscordIdLabel: 'معرّف Discord ID للمتعاون',
+    selectPermissionsLabel: 'اختر الصلاحيات الممنوحة',
+    grantPermissionsBtn: 'حفظ صلاحيات المتعاون',
+    hostSettingsTitle: 'إعدادات الاستضافة',
+    saveSettingsBtn: 'حفظ الإعدادات',
+    deleteHostTitle: 'حذف الاستضافة نهائياً',
+    deleteHostDesc:
+      'إزالة هذه الاستضافة بشكل دائم وتحرير منافذ الشبكة المخصصة لها.',
+    activityLogTitle: 'سجل نشاطات وتدقيق الاستضافة',
+    activityLogDesc:
+      'سجل تدقيق آمن ومنقّى من البيانات الحساسة لجميع العمليات المنفذة على هذه الاستضافة.',
+    actorLabel: 'المنفّذ',
+    systemActor: 'النظام',
+    noActivityEvents: 'لا توجد أحداث مسجلة بعد.',
+    // Admin View
+    adminTitle: 'إدارة النظام (Control Plane Administration)',
+    adminDesc:
+      'إدارة ومراقبة البيانات الحقيقية في PostgreSQL: المستخدمون، الاستضافات، النشاطات، الجلسات، العُقد، قواعد البيانات، الجدولة، والنسخ الاحتياطي.',
+    adminStatUsers: 'المستخدمون',
+    adminStatHosts: 'الاستضافات',
+    adminStatRegisteredNodes: 'العقد المسجلة',
+    adminStatConnectedNodes: 'العقد المتصلة',
+    adminStatAllocations: 'المنافذ المخصصة',
+    adminStatBackups: 'النسخ الاحتياطية',
+    adminNodeNameLabel: 'اسم العقدة (Node Name)',
+    adminLocationLabel: 'الموقع الجغرافي',
+    adminFqdnLabel: 'النطاق (FQDN)',
+    adminIpAddressLabel: 'عنوان IP',
+    adminMaxMemoryLabel: 'الذاكرة القصوى (MB)',
+    adminMaxDiskLabel: 'التخزين الأقصى (MB)',
+    registerNodeTitle: 'تسجيل عقدة تشغيل جديدة (Runtime Node Daemon)',
+    registerNodeBtn: 'تسجيل عقدة التشغيل',
+    userIdLabel: 'معرّف المستخدم',
+    online: 'متصل',
+    checking: 'جارٍ التحقق...',
+    refresh: 'تحديث',
+    fileColActions: 'الإجراءات',
+    deleteBtn: 'حذف',
+    adminTabUsers: 'المستخدمون',
+    adminTabHosts: 'الاستضافات',
+    adminTabActivity: 'النشاطات',
+    adminTabSessions: 'الجلسات',
+    adminTabNodes: 'العُقد',
+    adminTabDatabases: 'قواعد البيانات',
+    adminTabSchedules: 'الجدولة',
+    adminTabBackups: 'النسخ الاحتياطية',
+    adminSearchPlaceholder: 'ابحث بالاسم أو المعرّف (usr_ / srv_) أو Discord ID...',
+    adminFilterAll: 'الكل',
+    adminSortNewest: 'الأحدث أولاً',
+    adminSortOldest: 'الأقدم أولاً',
+    adminSortName: 'الاسم',
+    adminNoRecords: 'لا توجد سجلات مطابقة في قاعدة البيانات.',
+    adminRoleLabel: 'الدور',
+    adminResumeHostBtn: 'تفعيل',
+    adminSuspendHostBtn: 'تعليق',
+    adminRevokeSessionBtn: 'إبطال الجلسة',
+    adminInspectBtn: 'التفاصيل',
+    adminPageLabel: 'الصفحة',
+    adminPrevPage: 'السابق',
+    adminNextPage: 'التالي',
+    adminRecordDetailsTitle: 'تفاصيل السجل من PostgreSQL',
+  },
   'en-US': {
     localeCode: 'en-US' as SupportedLocale,
     dir: 'ltr' as 'ltr' | 'rtl',
-    langName: 'English (US)',
-    switchLangLabel: 'العربية (العراق)',
+    langName: 'English (en-US)',
+    shortLang: 'English',
     brandSubtitle: 'Powered by HyperSoft',
-    initializing: 'Initializing HyperHost Control Plane...',
-    // Login View
-    controlPlaneApi: 'Control Plane API',
-    online: 'Online',
-    checking: 'Checking',
-    maxQuotaHeader: 'Max Quota',
-    hostsPerUser: 'Hosts / User',
-    infraBadgeLeft: 'HyperSoft Cloud Infrastructure',
-    infraBadgeRight: 'Control Plane & Runtime Plane Separation',
+    initializing: 'Initializing HyperHost Platform...',
+    // Public Navigation
+    navHome: 'Home',
+    navServices: 'Services',
+    navProjects: 'Projects',
+    navAbout: 'About',
+    navContact: 'Contact',
+    navPrivacy: 'Privacy Policy',
+    navTerms: 'Terms of Service',
+    loginWithDiscord: 'Login with Discord',
+    connectingDiscord: 'Redirecting to Discord...',
+    openDashboard: 'Dashboard',
+    languageLabel: 'Language',
+    openMenuAria: 'Open main navigation menu',
+    closeMenuAria: 'Close main navigation menu',
+    // Homepage
+    heroBadge: 'HyperHost — Powered by HyperSoft',
     heroTitle: 'Professional Discord & Telegram Bot Hosting Platform',
     heroDescription:
-      'Deploy and manage isolated application Hosts for Discord bots, Telegram bots, Node.js, Python, Java, Go, and Rust workloads with granular permissions, encrypted environment vaults, and real-time WebSocket console streams.',
-    featureIsolatedTitle: 'Isolated Runtime Plane',
-    featureIsolatedDesc:
-      'Strict separation between the Fastify Control Plane and remote Runtime Nodes managing containers, CPU/RAM/Disk quotas, and network allocations.',
-    featureSecurityTitle: 'Zero-Trust Security',
-    featureSecurityDesc:
-      'Discord OAuth2 identity, AES-256-GCM encrypted secrets, 21 granular collaborator permission scopes, and full audit logging.',
-    signInTitle: 'Sign in to HyperHost',
-    signInSubtitle: 'Authenticate with your Discord account',
-    authUnavailable: 'Authentication Unavailable',
-    connectingDiscord: 'Connecting to Discord...',
-    continueWithDiscord: 'Continue with Discord OAuth2',
-    loginNotificationHint:
-      'A security login DM notification will be sent to your Discord account upon sign-in.',
-    telemetryTitle: 'Control Plane Telemetry',
-    refresh: 'Refresh',
-    fastifyServer: 'Fastify API Server',
-    postgresPrisma: 'PostgreSQL (Prisma)',
-    connected: 'CONNECTED',
-    awaitingDatabaseUrl: 'AWAITING DATABASE_URL',
-    discordOAuthEnv: 'Discord OAuth2 Env',
-    configured: 'CONFIGURED',
-    awaitingCredentials: 'AWAITING CREDENTIALS',
-    discordLoginNotifyEnv: 'Discord Login DM Bot',
-    enabled: 'ENABLED',
-    optionalStandby: 'STANDBY',
-    connectedRuntimeNodes: 'Connected Runtime Nodes',
-    footerLeft: 'HyperHost Control Plane — Powered by HyperSoft',
-    footerRight: 'Fastify · Prisma · PostgreSQL · WebSocket · Discord OAuth2',
+      'Purpose-built cloud control plane for deploying and managing Discord bots, Telegram bots, and Node.js, Python, Java, Go, and Rust workloads with strict Control Plane / Runtime Plane isolation, AES-256-GCM secret encryption, and granular team permissions.',
+    exploreServicesBtn: 'Explore Services',
+    viewArchitectureBtn: 'Platform Architecture',
+    supportedWorkloadsTitle: 'Supported Bot & Application Runtimes',
+    supportedWorkloadsDesc:
+      'HyperHost provisions isolated container environments managed by the Runtime Plane with dedicated CPU, memory, and NVMe storage limits.',
+    runtimeAvailabilityNote:
+      'Technical Note: Container execution requires an attached Runtime Node. HyperHost never displays fabricated node counts, fake uptime percentages, or simulated telemetry.',
+    discordBotHostingTitle: 'Discord Bot Hosting',
+    discordBotHostingDesc:
+      'First-class support for Discord.js, Eris, Pycord, JDA, and Serenity bots with encrypted token vaults and automated cron restarts.',
+    telegramBotHostingTitle: 'Telegram Bot Hosting',
+    telegramBotHostingDesc:
+      'Reliable hosting for Telegraf, Grammy, Aiogram, and Telebot workloads with live WebSocket console streams and sanitized audit logs.',
+    architecturePillarsTitle: 'HyperHost Security & Engineering Pillars',
+    pillarControlRuntimeTitle: 'Control Plane & Runtime Plane Separation',
+    pillarControlRuntimeDesc:
+      'The Fastify + PostgreSQL Control Plane manages authentication, RBAC, and scheduling without executing untrusted user code on the web server.',
+    pillarEncryptionTitle: 'AES-256-GCM Secret Encryption at Rest',
+    pillarEncryptionDesc:
+      'Environment variables and OAuth tokens are encrypted using AES-256-GCM prior to database storage and are never exposed in logs or responses.',
+    pillarRbacTitle: '21 Granular Collaborator Scopes',
+    pillarRbacDesc:
+      'Grant fine-grained per-Host permissions (Console, Files, Startup, Network, Backups) to team members via their Discord ID.',
+    pillarIdentityTitle: 'Non-Sequential Public Identifiers',
+    pillarIdentityDesc:
+      'Every User and Host is assigned an immutable, non-sequential public identifier (usr_ / srv_) so internal primary keys remain protected.',
     // Dashboard & Navigation
-    navDashboard: 'Dashboard & Hosts',
-    navHostPanel: 'Host Control Panel',
+    navDashboard: 'Dashboard',
+    navHostPanel: 'Host Panel',
     navAdmin: 'Control Plane Admin',
     accountQuota: 'Account Quota',
     hostsWord: 'Hosts',
+    maxQuotaLabel: 'Max Quota: 10 Hosts',
     signOut: 'Sign Out',
     controlPlaneHeader: 'HyperHost Control Plane',
-    runtimeNodesConnected: 'Runtime Nodes Connected',
     createHost: 'Create Host',
-    welcomeUser: 'Welcome',
+    welcomeUser: 'Welcome,',
+    publicUserIdLabel: 'Public User ID',
+    discordIdLabel: 'Discord ID',
+    currentHostsCountLabel: 'Current Hosts',
     dashboardSubtitle:
-      'Manage your Discord & Telegram Bot Hosts, monitor Runtime Node connectivity, and configure startup environments.',
-    discordLoginSuccessTitle: 'Discord OAuth2 Authentication Verified',
+      'Manage your Discord & Telegram Bot Hosts, inspect runtime status, and configure encrypted startup environments.',
+    discordLoginSuccessTitle: 'Signed in to HyperHost via Discord',
     discordLoginSuccessDesc:
       'Your session is active and a Discord login DM notification has been dispatched to your account.',
     dismiss: 'Dismiss',
-    totalHosts: 'Total Hosts',
+    totalHosts: 'Current Hosts',
     onlineHosts: 'Online Hosts',
     offlinePending: 'Offline / Pending',
     cpuUsage: 'CPU Usage',
     noMetricsAvailable: 'No metrics available',
-    memoryQuota: 'Memory Quota',
-    storageQuota: 'Storage Quota',
+    memoryQuota: 'Allocated Memory',
+    storageQuota: 'Allocated Storage',
     myHosts: 'My Hosts',
     usedOf: 'used',
     noHostsTitle: 'No Hosts Provisioned Yet',
     noHostsDesc:
       'Create your first Discord Bot, Telegram Bot, Node.js, Python, Java, Go, or Rust Host.',
+    serverIdLabel: 'Server ID',
+    createdAtLabel: 'Created At',
     cpuLimit: 'CPU Limit',
     ramLimit: 'RAM Limit',
     nodeLabel: 'Node',
-    runtimeNodeUnavailable: 'Runtime node unavailable',
+    runtimeUnavailable: 'Runtime unavailable',
+    runtimeNodeUnavailable: 'Runtime unavailable',
+    openBtn: 'Open',
     manage: 'Manage',
+    settingsActionBtn: 'Settings',
     recentActivity: 'Recent Activity',
     noRecentActivity: 'No recent activity recorded in PostgreSQL.',
+    copied: 'Copied',
+    copyId: 'Copy ID',
     // Create Host Modal
     createNewHostTitle: 'Create New Host',
     quotaUsage: 'Quota usage',
     noLiveNodesNotice:
-      'No live Runtime Nodes are currently connected. Your Host will be created in PENDING state until a Runtime Node is attached.',
+      'No live Runtime Nodes are currently connected. Your Host will be saved in PostgreSQL with PENDING (Runtime unavailable) status until a Runtime Node is attached.',
     hostNameLabel: 'Host Name',
     hostNamePlaceholder: 'e.g. Aegis Discord Bot',
     appTypeLabel: 'Application Type',
@@ -139,9 +449,9 @@ const dictionary = {
     clearConsole: 'Clear Console',
     reconnect: 'Reconnect',
     consoleUnavailableDesc:
-      'No Runtime Node agent is currently connected to stream stdout/stderr for this Host. Connect a Runtime Node daemon to enable live process execution.',
+      'No Runtime Node agent is currently connected to stream stdout/stderr for this Host (Runtime unavailable).',
     stdinPlaceholderConnected: 'Send command to container stdin...',
-    stdinPlaceholderDisconnected: 'Runtime node unavailable — stdin disabled',
+    stdinPlaceholderDisconnected: 'Runtime unavailable — stdin disabled',
     sendBtn: 'Send',
     remoteFileManager: 'Remote Node File Manager',
     workingPath: 'Working Path',
@@ -155,7 +465,7 @@ const dictionary = {
     fileTypeDir: 'Directory',
     fileTypeFile: 'File',
     filesUnavailableDesc:
-      'Host files reside exclusively on isolated Runtime Node volumes and never on the Control Plane web filesystem. Connect the assigned Runtime Node to browse, edit, upload, or download container files.',
+      'Host files reside exclusively on isolated Runtime Node volumes and never on the Control Plane web filesystem.',
     startupVaultTitle: 'Startup Configuration & Encrypted Environment Vault',
     startupVaultDesc:
       'Configure container entrypoint, runtime version, working directory, and AES-256-GCM encrypted variables. Secrets are never exposed in Activity Logs.',
@@ -163,7 +473,7 @@ const dictionary = {
     startupArgsLabel: 'Arguments (Space-separated)',
     workingDirLabel: 'Container Working Directory',
     envVarsTitle: 'Environment Variables',
-    secretLabel: 'Secret',
+    secretLabel: 'Secret (AES-256-GCM)',
     plainLabel: 'Plain',
     envKeyPlaceholder: 'KEY_NAME (e.g. DISCORD_TOKEN)',
     envValPlaceholder: 'Secret or configuration value',
@@ -173,7 +483,7 @@ const dictionary = {
     networkDesc:
       'IP, Port, and Protocol bindings assigned to this Host on its Runtime Node.',
     noAllocations:
-      'No network allocations assigned. Assign this Host to a Runtime Node with an available IP/Port pool.',
+      'No network allocations assigned.',
     netColIp: 'IP Address',
     netColPort: 'Port',
     netColProto: 'Protocol',
@@ -185,13 +495,13 @@ const dictionary = {
     metricsDesc:
       'Real-time CPU, Memory, Disk, Network RX/TX, and Uptime reported by the Runtime Node MetricsCollector.',
     metricsUnavailableDesc:
-      'Runtime Node telemetry is currently unavailable. HyperHost never displays fabricated CPU, RAM, or network metrics when a Runtime Node is offline.',
+      'Runtime unavailable. HyperHost never displays fabricated CPU, RAM, or network metrics when no Runtime Node is connected.',
     metricsCpuLoad: 'CPU Load',
     metricsMemoryUsage: 'Memory Usage',
     metricsUptime: 'Uptime',
     managementTitle: 'Process & Container Lifecycle Management',
     managementDesc:
-      'Dispatch lifecycle commands to the Runtime Node ProcessManager and ContainerManager. If the Runtime Node is offline, the API returns a structured error rather than faking success.',
+      'Dispatch lifecycle commands to the Runtime Node ProcessManager and ContainerManager.',
     mgmtStartTitle: 'Start Host',
     mgmtStartDesc: 'Boot container entrypoint',
     mgmtStopTitle: 'Stop Host',
@@ -204,7 +514,7 @@ const dictionary = {
     mgmtReinstallDesc: 'Rebuild runtime container',
     databasesTitle: 'Host Databases',
     databasesDesc:
-      'Dedicated database provisioning abstraction supporting PostgreSQL, MySQL, MongoDB, and Redis on Runtime Nodes.',
+      'Dedicated database provisioning abstraction supporting PostgreSQL, MySQL, MongoDB, and Redis.',
     provisionDatabaseBtn: 'Provision Database',
     noDatabases: 'No databases provisioned for this Host.',
     schedulesTitle: 'Control Plane Cron Schedules',
@@ -243,9 +553,9 @@ const dictionary = {
     systemActor: 'System',
     noActivityEvents: 'No activity events recorded yet.',
     // Admin View
-    adminTitle: 'Control Plane Administration & Runtime Nodes',
+    adminTitle: 'Control Plane Administration',
     adminDesc:
-      'Manage Runtime Nodes, IP/Port Allocation pools, Users, Hosts, Databases, Backups, and System Audit Activity.',
+      'Inspect and manage real PostgreSQL records across Users, Hosts, Activity, Sessions, Nodes, Databases, Schedules, and Backups.',
     adminStatUsers: 'Users',
     adminStatHosts: 'Hosts',
     adminStatRegisteredNodes: 'Registered Nodes',
@@ -260,255 +570,35 @@ const dictionary = {
     adminMaxDiskLabel: 'Max Disk (MB)',
     registerNodeTitle: 'Register New Runtime Node Daemon',
     registerNodeBtn: 'Register Runtime Node',
-  },
-  'ar-IQ': {
-    localeCode: 'ar-IQ' as SupportedLocale,
-    dir: 'rtl' as 'ltr' | 'rtl',
-    langName: 'العربية (العراق)',
-    switchLangLabel: 'English (US)',
-    brandSubtitle: 'Powered by HyperSoft',
-    initializing: 'جارٍ تهيئة لوحة تحكم HyperHost...',
-    // Login View
-    controlPlaneApi: 'واجهة لوحة التحكم',
-    online: 'متصل',
-    checking: 'جارٍ الفحص',
-    maxQuotaHeader: 'الحد الأقصى',
-    hostsPerUser: 'استضافات / مستخدم',
-    infraBadgeLeft: 'البنية السحابية من HyperSoft',
-    infraBadgeRight: 'فصل كامل بين لوحة التحكم وعقد التشغيل',
-    heroTitle: 'منصة احترافية لاستضافة بوتات ديسكورد وتيليجرام',
-    heroDescription:
-      'قم بنشر وإدارة استضافات (Hosts) معزولة لبوتات Discord وTelegram وتطبيقات Node.js وPython وJava وGo وRust مع صلاحيات دقيقة، وخزنة متغيرات بيئة مشفرة، وطرفية WebSocket فورية.',
-    featureIsolatedTitle: 'طبقة تشغيل معزولة (Runtime Plane)',
-    featureIsolatedDesc:
-      'فصل صارم بين خادم التحكم Fastify وعقد التشغيل البعيدة (Runtime Nodes) التي تدير الحاويات وحصص المعالج والذاكرة والتخزين والشبكة.',
-    featureSecurityTitle: 'أمان وحماية متقدمة (Zero-Trust)',
-    featureSecurityDesc:
-      'مصادقة رسمية عبر Discord OAuth2، وتشفير الأسرار بمعيار AES-256-GCM، و21 صلاحية دقيقة للمتعاونين، وسجل نشاطات مؤمّن بالكامل.',
-    signInTitle: 'تسجيل الدخول إلى HyperHost',
-    signInSubtitle: 'قم بالمصادقة باستخدام حساب Discord الخاص بك',
-    authUnavailable: 'تعذّر تسجيل الدخول',
-    connectingDiscord: 'جارٍ الاتصال بـ Discord...',
-    continueWithDiscord: 'المتابعة عبر Discord OAuth2',
-    loginNotificationHint:
-      'سيتم إرسال رسالة خاصة (DM) إلى حسابك في Discord لتأكيد تسجيل الدخول فور إتمام المصادقة.',
-    telemetryTitle: 'حالة البنية التحتية (Control Plane)',
-    refresh: 'تحديث',
-    fastifyServer: 'خادم Fastify API',
-    postgresPrisma: 'قاعدة بيانات PostgreSQL',
-    connected: 'متصل',
-    awaitingDatabaseUrl: 'بانتظار DATABASE_URL',
-    discordOAuthEnv: 'إعدادات Discord OAuth2',
-    configured: 'مُفعّل',
-    awaitingCredentials: 'بانتظار الإعدادات',
-    discordLoginNotifyEnv: 'إشعار تسجيل الدخول عبر Discord DM',
-    enabled: 'مُفعّل',
-    optionalStandby: 'احتياطي',
-    connectedRuntimeNodes: 'عقد التشغيل المتصلة (Nodes)',
-    footerLeft: 'HyperHost Control Plane — Powered by HyperSoft',
-    footerRight: 'Fastify · Prisma · PostgreSQL · WebSocket · Discord OAuth2',
-    // Dashboard & Navigation
-    navDashboard: 'لوحة التحكم والاستضافات',
-    navHostPanel: 'إدارة الاستضافة (Host Panel)',
-    navAdmin: 'إدارة النظام والعُقد',
-    accountQuota: 'حصة الحساب',
-    hostsWord: 'استضافات',
-    signOut: 'تسجيل الخروج',
-    controlPlaneHeader: 'لوحة تحكم HyperHost',
-    runtimeNodesConnected: 'عقد التشغيل المتصلة',
-    createHost: 'إنشاء استضافة',
-    welcomeUser: 'مرحباً بك،',
-    dashboardSubtitle:
-      'أدر استضافات بوتات Discord وTelegram الخاصة بك، وراقب اتصال عقد التشغيل، واضبط إعدادات الإقلاع ومتغيرات البيئة.',
-    discordLoginSuccessTitle: 'تم تسجيل الدخول إلى HyperHost بنجاح',
-    discordLoginSuccessDesc:
-      'جلستك الآن نشطة ومؤمّنة، وتم إرسال إشعار تسجيل الدخول عبر رسالة خاصة (DM) إلى حسابك في Discord.',
-    dismiss: 'إغلاق',
-    totalHosts: 'إجمالي الاستضافات',
-    onlineHosts: 'الاستضافات النشطة',
-    offlinePending: 'متوقفة / قيد الانتظار',
-    cpuUsage: 'استهلاك المعالج',
-    noMetricsAvailable: 'No metrics available · لا توجد قياسات متاحة',
-    memoryQuota: 'حصة الذاكرة (RAM)',
-    storageQuota: 'حصة التخزين',
-    myHosts: 'استضافاتي (My Hosts)',
-    usedOf: 'مستخدمة',
-    noHostsTitle: 'لا توجد استضافات منشأة بعد',
-    noHostsDesc:
-      'أنشئ أول استضافة لبوت Discord أو بوت Telegram أو تطبيق Node.js أو Python أو Java أو Go أو Rust.',
-    cpuLimit: 'حد المعالج',
-    ramLimit: 'حد الذاكرة',
-    nodeLabel: 'العقدة',
-    runtimeNodeUnavailable: 'Runtime node unavailable · عقدة التشغيل غير متاحة',
-    manage: 'إدارة الاستضافة',
-    recentActivity: 'النشاطات الأخيرة',
-    noRecentActivity: 'لا توجد نشاطات مسجلة في قاعدة البيانات حتى الآن.',
-    // Create Host Modal
-    createNewHostTitle: 'إنشاء استضافة جديدة (Create Host)',
-    quotaUsage: 'استهلاك الحصة',
-    noLiveNodesNotice:
-      'لا توجد عقد تشغيل (Runtime Nodes) متصلة حالياً. سيتم إنشاء الاستضافة بحالة PENDING حتى يتم ربط عقدة تشغيل.',
-    hostNameLabel: 'اسم الاستضافة (Host Name)',
-    hostNamePlaceholder: 'مثال: Aegis Discord Bot',
-    appTypeLabel: 'نوع التطبيق',
-    runtimeEnvLabel: 'بيئة التشغيل (Runtime)',
-    runtimeVersionLabel: 'إصدار البيئة',
-    descriptionOptionalLabel: 'الوصف (اختياري)',
-    descriptionPlaceholder: 'وصف مختصر لوظيفة البوت أو الخدمة',
-    targetNodeLabel: 'عقدة التشغيل المستهدفة (Runtime Node)',
-    unassignedNodeOption: 'غير معيّن — الاحتفاظ بحالة PENDING حتى توفر عقدة',
-    cpuLimitPercentLabel: 'حد المعالج CPU (%)',
-    memoryLimitMbLabel: 'حد الذاكرة RAM (MB)',
-    diskLimitMbLabel: 'حد قرص التخزين NVMe (MB)',
-    cancel: 'إلغاء',
-    creatingHost: 'جارٍ الإنشاء...',
-    // Host Panel Tabs
-    tabConsole: 'الطرفية (Console)',
-    tabFiles: 'الملفات (Files)',
-    tabStartup: 'الإقلاع (Startup)',
-    tabNetwork: 'الشبكة (Network)',
-    tabMetrics: 'القياسات (Metrics)',
-    tabManagement: 'التحكم (Management)',
-    tabDatabases: 'قواعد البيانات',
-    tabSchedules: 'المهام المجدولة',
-    tabBackups: 'النسخ الاحتياطي',
-    tabAdministration: 'الإدارة',
-    tabUsers: 'المستخدمون',
-    tabSettings: 'الإعدادات',
-    tabActivity: 'سجل النشاط',
-    statusLabel: 'الحالة',
-    runtimeLabel: 'بيئة التشغيل',
-    limitsLabel: 'الموارد المخصصة',
-    startBtn: 'تشغيل',
-    restartBtn: 'إعادة تشغيل',
-    stopBtn: 'إيقاف',
-    wsConsoleStream: 'بث الطرفية المباشر (WebSocket Console)',
-    wsConnected: 'متصل',
-    wsConnecting: 'جارٍ الاتصال...',
-    clearConsole: 'مسح السجل',
-    reconnect: 'إعادة الاتصال',
-    consoleUnavailableDesc:
-      'لا توجد عقدة تشغيل (Runtime Node) متصلة حالياً لبث مخرجات stdout/stderr لهذه الاستضافة. قم بتوصيل عقدة التشغيل لتفعيل التنفيذ المباشر.',
-    stdinPlaceholderConnected: 'أرسل أمراً إلى حاوية التشغيل (stdin)...',
-    stdinPlaceholderDisconnected: 'عقدة التشغيل غير متاحة — الإدخال معطّل',
-    sendBtn: 'إرسال',
-    remoteFileManager: 'مدير ملفات عقدة التشغيل',
-    workingPath: 'مسار العمل',
-    newFileOrFolderPlaceholder: 'اسم الملف أو المجلد الجديد',
-    createFileBtn: 'إنشاء ملف',
-    createFolderBtn: 'إنشاء مجلد',
-    fileColName: 'الاسم',
-    fileColType: 'النوع',
-    fileColSize: 'الحجم',
-    fileColModified: 'تاريخ التعديل',
-    fileTypeDir: 'مجلد',
-    fileTypeFile: 'ملف',
-    filesUnavailableDesc:
-      'تُحفظ ملفات الاستضافة حصرياً داخل وحدات تخزين عقد التشغيل المعزولة (Runtime Nodes) وليس على خادم الويب. قم بتوصيل عقدة التشغيل لتصفح وتحرير الملفات.',
-    startupVaultTitle: 'إعدادات الإقلاع وخزنة متغيرات البيئة المشفرة',
-    startupVaultDesc:
-      'اضبط أمر التشغيل، وإصدار البيئة، ومسار العمل، والمتغيرات المشفرة بمعيار AES-256-GCM. لا يتم كشف القيم السرية أبداً في سجلات النشاط.',
-    startupCommandLabel: 'أمر الإقلاع (Startup Command)',
-    startupArgsLabel: 'المعاملات الإضافية (Arguments)',
-    workingDirLabel: 'مسار العمل داخل الحاوية',
-    envVarsTitle: 'متغيرات البيئة (Environment Variables)',
-    secretLabel: 'سري (Secret)',
-    plainLabel: 'عادي (Plain)',
-    envKeyPlaceholder: 'KEY_NAME (مثال: DISCORD_TOKEN)',
-    envValPlaceholder: 'القيمة السرية أو الإعداد',
-    addVariableBtn: 'إضافة متغير',
-    saveStartupBtn: 'حفظ إعدادات الإقلاع',
-    networkTitle: 'تخصيصات الشبكة والمنافذ (Allocations)',
-    networkDesc:
-      'عناوين IP والمنافذ والبروتوكولات المخصصة لهذه الاستضافة على عقدة التشغيل.',
-    noAllocations:
-      'لا توجد منافذ شبكة مخصصة بعد. قم بتعيين الاستضافة إلى عقدة تشغيل تحتوي على منافذ متاحة.',
-    netColIp: 'عنوان IP',
-    netColPort: 'المنفذ',
-    netColProto: 'البروتوكول',
-    netColRole: 'الدور',
-    netColStatus: 'الحالة',
-    netRolePrimary: 'أساسي',
-    netRoleSecondary: 'ثانوي',
-    metricsTitle: 'قياسات موارد الحاوية (Telemetry)',
-    metricsDesc:
-      'قراءات حقيقية وفورية لاستهلاك المعالج والذاكرة والقرص والشبكة ووقت التشغيل من عقدة التشغيل.',
-    metricsUnavailableDesc:
-      'قياسات عقدة التشغيل غير متاحة حالياً. لا تقوم منصة HyperHost بعرض أي أرقام وهمية للمعالج أو الذاكرة عندما تكون عقدة التشغيل غير متصلة.',
-    metricsCpuLoad: 'حمل المعالج',
-    metricsMemoryUsage: 'استهلاك الذاكرة',
-    metricsUptime: 'مدة التشغيل',
-    managementTitle: 'إدارة دورة حياة الحاوية والعمليات',
-    managementDesc:
-      'إرسال أوامر التشغيل والإيقاف وإعادة البناء إلى عقدة التشغيل. في حال عدم اتصال العقدة، يعيد النظام رسالة حالة صريحة بدلاً من التظاهر بالتشغيل.',
-    mgmtStartTitle: 'تشغيل الاستضافة',
-    mgmtStartDesc: 'بدء تشغيل الحاوية',
-    mgmtStopTitle: 'إيقاف الاستضافة',
-    mgmtStopDesc: 'إرسال إشارة إيقاف آمنة SIGTERM',
-    mgmtRestartTitle: 'إعادة تشغيل الاستضافة',
-    mgmtRestartDesc: 'إيقاف وإعادة تشغيل متتابعة',
-    mgmtKillTitle: 'إنهاء فوري (Kill)',
-    mgmtKillDesc: 'إيقاف إجباري فوري SIGKILL',
-    mgmtReinstallTitle: 'إعادة تثبيت الصورة',
-    mgmtReinstallDesc: 'إعادة بناء حاوية التشغيل',
-    databasesTitle: 'قواعد بيانات الاستضافة',
-    databasesDesc:
-      'طبقة إدارة وتخصيص قواعد بيانات PostgreSQL وMySQL وMongoDB وRedis على عقد التشغيل.',
-    provisionDatabaseBtn: 'إنشاء قاعدة بيانات',
-    noDatabases: 'لا توجد قواعد بيانات مخصصة لهذه الاستضافة.',
-    schedulesTitle: 'المهام المجدولة (Cron Schedules)',
-    schedulesDesc:
-      'مهام مجدولة تعمل تلقائياً عبر مجدول لوحة التحكم (Control Plane Scheduler).',
-    schedNamePlaceholder: 'إعادة تشغيل يومية',
-    schedTaskRestart: 'إعادة تشغيل الاستضافة',
-    schedTaskStart: 'تشغيل الاستضافة',
-    schedTaskStop: 'إيقاف الاستضافة',
-    schedTaskCommand: 'تنفيذ أمر',
-    schedTaskBackup: 'إنشاء نسخة احتياطية',
-    schedStatusScheduled: 'مجدولة',
-    addScheduleBtn: 'إضافة مهمة مجدولة',
-    noSchedules: 'لا توجد مهام مجدولة لهذه الاستضافة.',
-    backupsTitle: 'النسخ الاحتياطية (S3 Object Storage)',
-    backupsDesc:
-      'إنشاء واستعادة وتحميل وحذف النسخ الاحتياطية المؤرشفة.',
-    backupNamePlaceholder: 'نسخة احتياطية قبل التحديث',
-    createBackupBtn: 'إنشاء نسخة احتياطية',
-    noBackups: 'لا توجد نسخ احتياطية مسجلة لهذه الاستضافة.',
-    collaboratorsTitle: 'المتعاونون والصلاحيات الدقيقة',
-    collaboratorsDesc:
-      'امنح صلاحيات محددة للمتعاونين عبر معرّف Discord ID الخاص بهم (21 صلاحية دقيقة).',
-    collaboratorDiscordIdLabel: 'معرّف Discord ID للمتعاون',
-    selectPermissionsLabel: 'اختر الصلاحيات الممنوحة',
-    grantPermissionsBtn: 'حفظ صلاحيات المتعاون',
-    hostSettingsTitle: 'إعدادات الاستضافة',
-    saveSettingsBtn: 'حفظ الإعدادات',
-    deleteHostTitle: 'حذف الاستضافة نهائياً',
-    deleteHostDesc:
-      'إزالة هذه الاستضافة بشكل دائم وتحرير منافذ الشبكة المخصصة لها.',
-    activityLogTitle: 'سجل نشاطات وتدقيق الاستضافة',
-    activityLogDesc:
-      'سجل تدقيق آمن ومنقّى من البيانات الحساسة لجميع العمليات المنفذة على هذه الاستضافة.',
-    actorLabel: 'المنفّذ',
-    systemActor: 'النظام',
-    noActivityEvents: 'لا توجد أحداث مسجلة بعد.',
-    // Admin View
-    adminTitle: 'إدارة لوحة التحكم وعقد التشغيل (Runtime Nodes)',
-    adminDesc:
-      'إدارة عقد التشغيل، ومجموعات عناوين IP والمنافذ، والمستخدمين، والاستضافات، والنسخ الاحتياطية، وسجل التدقيق العام.',
-    adminStatUsers: 'المستخدمون',
-    adminStatHosts: 'الاستضافات',
-    adminStatRegisteredNodes: 'العقد المسجلة',
-    adminStatConnectedNodes: 'العقد المتصلة',
-    adminStatAllocations: 'المنافذ المخصصة',
-    adminStatBackups: 'النسخ الاحتياطية',
-    adminNodeNameLabel: 'اسم العقدة (Node Name)',
-    adminLocationLabel: 'الموقع الجغرافي',
-    adminFqdnLabel: 'النطاق (FQDN)',
-    adminIpAddressLabel: 'عنوان IP',
-    adminMaxMemoryLabel: 'الذاكرة القصوى (MB)',
-    adminMaxDiskLabel: 'التخزين الأقصى (MB)',
-    registerNodeTitle: 'تسجيل عقدة تشغيل جديدة (Runtime Node Daemon)',
-    registerNodeBtn: 'تسجيل عقدة التشغيل',
+    userIdLabel: 'User ID',
+    online: 'Online',
+    checking: 'Checking...',
+    refresh: 'Refresh',
+    fileColActions: 'Actions',
+    deleteBtn: 'Delete',
+    adminTabUsers: 'Users',
+    adminTabHosts: 'Hosts',
+    adminTabActivity: 'Activity',
+    adminTabSessions: 'Sessions',
+    adminTabNodes: 'Nodes',
+    adminTabDatabases: 'Databases',
+    adminTabSchedules: 'Schedules',
+    adminTabBackups: 'Backups',
+    adminSearchPlaceholder: 'Search by name, public ID (usr_ / srv_), or Discord ID...',
+    adminFilterAll: 'All Statuses',
+    adminSortNewest: 'Newest First',
+    adminSortOldest: 'Oldest First',
+    adminSortName: 'Name (A-Z)',
+    adminNoRecords: 'No matching records found in PostgreSQL.',
+    adminRoleLabel: 'Role',
+    adminResumeHostBtn: 'Resume',
+    adminSuspendHostBtn: 'Suspend',
+    adminRevokeSessionBtn: 'Revoke Session',
+    adminInspectBtn: 'Inspect',
+    adminPageLabel: 'Page',
+    adminPrevPage: 'Previous',
+    adminNextPage: 'Next',
+    adminRecordDetailsTitle: 'PostgreSQL Record Details',
   },
 };
 
@@ -589,40 +679,85 @@ export function useI18n(): I18nContextValue {
   return useContext(I18nContext);
 }
 
-export const LanguageSwitcher: React.FC<{ className?: string }> = ({
-  className = '',
-}) => {
-  const { locale, setLocale } = useI18n();
+export const LanguageSwitcher: React.FC<{
+  className?: string;
+  compact?: boolean;
+}> = ({ className = '', compact = false }) => {
+  const { locale, setLocale, t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
-    <div
-      className={`inline-flex items-center rounded-lg bg-[#11131F] border border-slate-800 p-0.5 text-xs ${className}`}
-      role="group"
-      aria-label="Language Switcher"
-    >
-      <Globe className="w-3.5 h-3.5 text-indigo-400 mx-1.5 shrink-0" />
+    <div ref={containerRef} className={`relative inline-block ${className}`}>
       <button
         type="button"
-        onClick={() => setLocale('ar-IQ')}
-        className={`px-2 py-1 rounded-md font-medium transition-colors cursor-pointer ${
-          locale === 'ar-IQ'
-            ? 'bg-indigo-600 text-white'
-            : 'text-slate-400 hover:text-white'
-        }`}
+        onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={t.languageLabel}
+        className="min-h-[40px] px-3 py-2 rounded-xl bg-[#121424] hover:bg-[#191C32] border border-violet-500/20 text-xs font-medium text-slate-200 inline-flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer focus-visible:outline-2 focus-visible:outline-violet-500"
       >
-        العربية (ar-IQ)
+        <Globe className="w-4 h-4 text-violet-400 shrink-0" />
+        <span>{compact ? (locale === 'ar-IQ' ? 'AR' : 'EN') : t.shortLang}</span>
+        <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
       </button>
-      <button
-        type="button"
-        onClick={() => setLocale('en-US')}
-        className={`px-2 py-1 rounded-md font-medium transition-colors cursor-pointer ${
-          locale === 'en-US'
-            ? 'bg-indigo-600 text-white'
-            : 'text-slate-400 hover:text-white'
-        }`}
-      >
-        English (en-US)
-      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label={t.languageLabel}
+          className="absolute end-0 mt-2 w-48 rounded-xl bg-[#101220] border border-slate-800 shadow-2xl p-1.5 z-50 space-y-1"
+        >
+          <button
+            type="button"
+            role="option"
+            aria-selected={locale === 'ar-IQ'}
+            onClick={() => {
+              setLocale('ar-IQ');
+              setOpen(false);
+            }}
+            className={`w-full px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-between transition-colors cursor-pointer ${
+              locale === 'ar-IQ'
+                ? 'bg-violet-600 text-white'
+                : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+            }`}
+          >
+            <span>العربية (ar-IQ)</span>
+            <span className="text-[10px] opacity-80">RTL</span>
+          </button>
+
+          <button
+            type="button"
+            role="option"
+            aria-selected={locale === 'en-US'}
+            onClick={() => {
+              setLocale('en-US');
+              setOpen(false);
+            }}
+            className={`w-full px-3 py-2.5 rounded-lg text-xs font-medium flex items-center justify-between transition-colors cursor-pointer ${
+              locale === 'en-US'
+                ? 'bg-violet-600 text-white'
+                : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+            }`}
+          >
+            <span>English (en-US)</span>
+            <span className="text-[10px] opacity-80">LTR</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };

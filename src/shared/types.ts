@@ -186,6 +186,7 @@ export interface ApiSuccessPayload<T> {
 
 export interface AuthenticatedUserDTO {
   id: string;
+  publicId: string;
   discordId: string;
   username: string;
   displayName: string;
@@ -199,7 +200,10 @@ export interface AuthenticatedUserDTO {
 
 export interface HostSummaryDTO {
   id: string;
+  publicId: string;
+  serverId?: string;
   ownerId: string;
+  ownerPublicId?: string;
   name: string;
   description: string | null;
   type: HostTypeCode;
