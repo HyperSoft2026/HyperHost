@@ -38,10 +38,6 @@ export const CreateHostSchema = z.object({
   nodeId: z.string().trim().optional().nullable(),
   planCode: z.string().trim().optional().default('FREE'),
   planId: z.string().trim().optional().nullable(),
-  memoryLimitMb: z.number().int().optional(),
-  cpuLimitPercent: z.number().int().optional(),
-  diskLimitMb: z.number().int().optional(),
-  storageLimitMb: z.number().int().optional(),
 });
 
 export const UpdateStartupSchema = z.object({
@@ -176,3 +172,17 @@ export const CreateNodeAllocationBatchSchema = z.object({
   endPort: z.number().int().min(1024).max(65535),
   protocol: z.enum(['TCP', 'UDP', 'BOTH']).default('TCP'),
 });
+
+export const CreateSupportMessageSchema = z.object({
+  subject: z
+    .string()
+    .trim()
+    .min(3, 'Subject must be at least 3 characters')
+    .max(120, 'Subject cannot exceed 120 characters'),
+  message: z
+    .string()
+    .trim()
+    .min(10, 'Message details must be at least 10 characters')
+    .max(3000, 'Message cannot exceed 3000 characters'),
+});
+

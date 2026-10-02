@@ -1,13 +1,14 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Host, Session, User } from '@prisma/client';
 import { getPrismaOrThrow } from './database';
-import { hashToken } from './crypto';
+import { hashToken, safeTimingEqual } from './crypto';
 import { AppError } from './errors';
 import { config } from './config';
 import type { HostPermissionScope } from '../shared/types';
 import { logger } from './logger';
 
 export const SESSION_COOKIE_NAME = 'hyperhost_session';
+export const CSRF_COOKIE_NAME = 'hyperhost_csrf';
 
 export function getSessionCookieOptions(request?: FastifyRequest) {
   const isHttps =
@@ -22,6 +23,22 @@ export function getSessionCookieOptions(request?: FastifyRequest) {
     secure: isHttps,
     sameSite: (isHttps ? 'none' : 'lax') as 'none' | 'lax',
     maxAge: 60 * 60 * 24 * 14, // 14 days
+  };
+}
+
+export function getCsrfCookieOptions(request?: FastifyRequest) {
+  const isHttps =
+    config.nodeEnv === 'production' ||
+    Boolean(config.appUrl?.startsWith('https://')) ||
+    request?.headers['x-forwarded-proto'] === 'https' ||
+    request?.protocol === 'https';
+
+  return {
+    path: '/',
+    httpOnly: false, // Accessible by browser script to attach to X-CSRF-Token header
+    secure: isHttps,
+    sameSite: (isHttps ? 'none' : 'lax') as 'none' | 'lax',
+    maxAge: 60 * 60 * 24 * 14,
   };
 }
 
@@ -59,18 +76,21 @@ export async function resolveAuthContext(
     return null;
   }
 
-  // CSRF verification on state-mutating cookie-authenticated requests
+  // Strict CSRF verification on state-mutating cookie-authenticated requests
   if (cookieToken && !bearerToken && MUTATING_METHODS.has(request.method)) {
-    const customHeader = request.headers['x-hyperhost-request'];
-    const csrfHeader = request.headers['x-csrf-token'];
+    const rawCsrf =
+      (request.headers['x-csrf-token'] as string | undefined)?.trim() ||
+      ((request.body as Record<string, unknown> | null)?._csrf as string | undefined)?.trim();
+
     const validCsrf =
-      customHeader === '1' ||
-      (typeof csrfHeader === 'string' && csrfHeader === session.csrfToken);
+      Boolean(rawCsrf) &&
+      rawCsrf.length >= 16 &&
+      safeTimingEqual(rawCsrf, session.csrfToken);
 
     if (!validCsrf) {
       throw new AppError(
         'CSRF_VALIDATION_FAILED',
-        'Missing or invalid CSRF protection header on state-changing request.',
+        'Missing or invalid CSRF protection token on state-changing request.',
         403
       );
     }

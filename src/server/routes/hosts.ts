@@ -226,19 +226,6 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     const body = CreateHostSchema.parse(request.body);
     const prisma = getPrismaOrThrow();
 
-    // Enforce MAX_HOSTS_PER_USER = 10 in Backend
-    const currentHostCount = await prisma.host.count({
-      where: { ownerId: user.id },
-    });
-
-    if (currentHostCount >= MAX_HOSTS_PER_USER) {
-      throw new AppError(
-        'HOST_LIMIT_REACHED',
-        `You have reached the maximum limit of ${MAX_HOSTS_PER_USER} Hosts per account.`,
-        403
-      );
-    }
-
     const runtimeItem = RUNTIME_CATALOG.find((r) => r.code === body.runtime);
     if (!runtimeItem) {
       throw new AppError('INVALID_RUNTIME', 'Unsupported runtime selected.', 400);
@@ -247,7 +234,6 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     const adapter = runtimeRegistry.getRuntimeAdapter(body.runtime);
     const dockerImage = adapter.resolveDockerImage(body.runtimeVersion);
     const providerName = runtimeProvisionerService.getProvisioner().providerName;
-
     const generatedServerId = generatePublicId('srv');
 
     // Strict Backend Resource Enforcement:
@@ -255,30 +241,51 @@ export async function registerHostRoutes(app: FastifyInstance): Promise<void> {
     const { resolveHostingPlanForHost } = await import('../plans');
     const planSnapshot = await resolveHostingPlanForHost(body.planCode || body.planId || 'FREE');
 
-    const createdHost = await prisma.host.create({
-      data: {
-        publicId: generatedServerId,
-        ownerId: user.id,
-        nodeId: null,
-        provider: providerName,
-        provisioningStatus: 'PENDING',
-        serverStatus: 'UNPROVISIONED',
-        name: body.name,
-        description: body.description ?? null,
-        type: body.type,
-        runtime: body.runtime,
-        runtimeVersion: body.runtimeVersion || runtimeItem.defaultVersion,
-        status: 'PENDING',
-        planId: planSnapshot.planId,
-        memoryLimitMb: planSnapshot.memoryLimitMb,
-        cpuLimitPercent: planSnapshot.cpuLimit,
-        diskLimitMb: planSnapshot.storageLimitMb,
-        storageLimitMb: planSnapshot.storageLimitMb,
-        startupCommand: runtimeItem.defaultStartupCommand,
-        startupArgs: [],
-        workingDirectory: '/home/container',
-        dockerImage,
-      },
+    // Concurrency-safe atomic quota enforcement via transaction
+    const createdHost = await prisma.$transaction(async (tx) => {
+      try {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('host_quota_' || ${user.id}))`;
+      } catch {
+        // Safe fallback for environments where raw advisory locks are not supported
+      }
+
+      const currentHostCount = await tx.host.count({
+        where: { ownerId: user.id },
+      });
+
+      if (currentHostCount >= MAX_HOSTS_PER_USER) {
+        throw new AppError(
+          'HOST_LIMIT_REACHED',
+          `You have reached the maximum limit of ${MAX_HOSTS_PER_USER} Hosts per account.`,
+          403
+        );
+      }
+
+      return tx.host.create({
+        data: {
+          publicId: generatedServerId,
+          ownerId: user.id,
+          nodeId: null,
+          provider: providerName,
+          provisioningStatus: 'PENDING',
+          serverStatus: 'UNPROVISIONED',
+          name: body.name,
+          description: body.description ?? null,
+          type: body.type,
+          runtime: body.runtime,
+          runtimeVersion: body.runtimeVersion || runtimeItem.defaultVersion,
+          status: 'PENDING',
+          planId: planSnapshot.planId,
+          memoryLimitMb: planSnapshot.memoryLimitMb,
+          cpuLimitPercent: planSnapshot.cpuLimit,
+          diskLimitMb: planSnapshot.storageLimitMb,
+          storageLimitMb: planSnapshot.storageLimitMb,
+          startupCommand: runtimeItem.defaultStartupCommand,
+          startupArgs: [],
+          workingDirectory: '/home/container',
+          dockerImage,
+        },
+      });
     });
 
     const serverPublicId = formatEntityPublicId(

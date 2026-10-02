@@ -329,7 +329,8 @@ export class NodeProvisionerService {
       if (
         existingHost?.status === 'RUNNING' ||
         existingHost?.status === 'ONLINE' ||
-        existingHost?.status === 'NODE_ONLINE'
+        existingHost?.status === 'NODE_ONLINE' ||
+        existingHost?.status === 'STARTING'
       ) {
         logger.info('Preserved active Host status despite deployment poll warning', {
           hostId,
@@ -372,6 +373,7 @@ export class NodeProvisionerService {
   /**
    * Called when a dedicated per-Host Node completes its WebSocket handshake.
    * Transitions the Host through NODE_ONLINE -> STARTING -> RUNNING by spawning the real process.
+   * Uses an atomic concurrency-safe guard to ensure single-execution (prevents double start).
    */
   public async startHostOnConnectedDedicatedNode(
     hostId: string,
@@ -395,29 +397,43 @@ export class NodeProvisionerService {
       return;
     }
 
+    // Concurrency-safe atomic guard: Only allow the first caller to transition the Host
+    // into NODE_ONLINE/STARTING. Any subsequent or concurrent caller will find claimResult.count === 0 and exit.
     const now = new Date();
-    await Promise.all([
-      prisma.host.update({
-        where: { id: host.id },
-        data: {
-          status: 'NODE_ONLINE',
-          provisioningStatus: 'NODE_ONLINE',
-          serverStatus: 'ONLINE',
-          nodeConnectedAt: now,
-          provisioningError: null,
+    const claimResult = await prisma.host.updateMany({
+      where: {
+        id: host.id,
+        status: {
+          in: ['PENDING', 'PROVISIONING', 'BOOTSTRAPPING', 'NODE_CONNECTING'],
         },
-      }),
-      prisma.node.update({
-        where: { id: nodeId },
-        data: {
-          status: 'ONLINE',
-          isOnline: true,
-          serverStatus: 'ONLINE',
-          lastHeartbeatAt: now,
-          bootstrapTokenEncrypted: null,
-        },
-      }),
-    ]);
+      },
+      data: {
+        status: 'NODE_ONLINE',
+        provisioningStatus: 'NODE_ONLINE',
+        serverStatus: 'ONLINE',
+        nodeConnectedAt: now,
+        provisioningError: null,
+      },
+    });
+
+    if (claimResult.count === 0) {
+      logger.info('Host start already claimed or in progress, skipping duplicate startup', {
+        hostId,
+        nodeId,
+      });
+      return;
+    }
+
+    await prisma.node.update({
+      where: { id: nodeId },
+      data: {
+        status: 'ONLINE',
+        isOnline: true,
+        serverStatus: 'ONLINE',
+        lastHeartbeatAt: now,
+        bootstrapTokenEncrypted: null,
+      },
+    }).catch(() => null);
 
     const decryptedEnv: Record<string, string> = {};
     for (const env of host.environments) {

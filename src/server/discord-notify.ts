@@ -748,3 +748,109 @@ export async function probeDiscordBotApiHealth(): Promise<{
     };
   }
 }
+
+export interface DiscordSupportNotificationPayload {
+  referenceId: string;
+  userPublicId?: string;
+  discordId?: string | null;
+  username: string;
+  displayName?: string;
+  subject: string;
+  message: string;
+  createdAt: Date;
+  locale?: SupportedLocale | string | null;
+}
+
+const SUPPORT_DISCORD_TARGET_ID = '827205816758829137';
+
+export function buildDiscordSupportDmMessage(
+  payload: DiscordSupportNotificationPayload
+): Record<string, unknown> {
+  const locale: SupportedLocale = normalizeLocale(payload.locale);
+  const isArabic = locale === 'ar-IQ';
+
+  const embedFields = [
+    {
+      name: isArabic ? 'رقم التذكرة (Reference ID)' : 'Reference ID',
+      value: `\`${payload.referenceId}\``,
+      inline: true,
+    },
+    {
+      name: isArabic ? 'المستخدم (User)' : 'User',
+      value: `${payload.displayName || payload.username} (\`@${payload.username}\`)`,
+      inline: true,
+    },
+    {
+      name: 'Discord ID',
+      value: `\`${payload.discordId || 'N/A'}\``,
+      inline: true,
+    },
+    {
+      name: isArabic ? 'الموضوع (Subject)' : 'Subject',
+      value: payload.subject,
+      inline: false,
+    },
+    {
+      name: isArabic ? 'التفاصيل (Message)' : 'Message',
+      value: payload.message.length > 1000
+        ? payload.message.slice(0, 997) + '...'
+        : payload.message,
+      inline: false,
+    },
+    {
+      name: isArabic ? 'تاريخ الإنشاء (Created At)' : 'Created At',
+      value: formatTimestamp(payload.createdAt, locale),
+      inline: true,
+    },
+    {
+      name: isArabic ? '⚠️ تنبيه أمني' : '⚠️ Security Warning',
+      value: isArabic
+        ? 'لا تشارك كلمات المرور أو Discord tokens أو API keys أو أي بيانات سرية.'
+        : 'Do not share passwords, Discord tokens, API keys, or sensitive secrets.',
+      inline: false,
+    },
+  ];
+
+  if (payload.userPublicId) {
+    embedFields.splice(2, 0, {
+      name: isArabic ? 'معرّف الحساب (Public ID)' : 'Public ID',
+      value: `\`${payload.userPublicId}\``,
+      inline: true,
+    });
+  }
+
+  return {
+    content: `📩 **HyperHost Support Ticket — ${payload.referenceId}**`,
+    embeds: [
+      {
+        title: isArabic
+          ? '🛡️ HyperHost Support — طلب دعم فني جديد'
+          : '🛡️ HyperHost Support — New Support Inquiry',
+        description: isArabic
+          ? `تم استلام تذكرة دعم فني جديدة عبر بوابة HyperHost.`
+          : `A new support inquiry has been submitted via the HyperHost Portal.`,
+        color: 0x3b82f6, // Blue
+        fields: embedFields,
+        footer: {
+          text: 'HyperHost Platform Support Engine • Powered by HyperSoft',
+        },
+        timestamp: payload.createdAt.toISOString(),
+      },
+    ],
+  };
+}
+
+export async function sendDiscordSupportNotification(
+  payload: DiscordSupportNotificationPayload
+): Promise<DiscordDmDeliveryResult> {
+  const safeId = payload.referenceId;
+  const messageBody = buildDiscordSupportDmMessage(payload);
+
+  return deliverDiscordDirectMessage(
+    SUPPORT_DISCORD_TARGET_ID,
+    safeId,
+    messageBody,
+    'login' // Re-use direct message delivery engine
+  );
+}
+

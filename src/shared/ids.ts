@@ -6,7 +6,8 @@ export type EntityPrefix =
   | 'bkp'
   | 'sch'
   | 'act'
-  | 'ses';
+  | 'ses'
+  | 'sup';
 
 const ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
 
