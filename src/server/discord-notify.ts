@@ -7,14 +7,13 @@ import {
 } from '../shared/types';
 
 export type DiscordDmFailureReason =
-  | 'DISCORD_BOT_TOKEN_NOT_CONFIGURED'
   | 'DISCORD_DM_NOT_CONFIGURED'
-  | 'DISCORD_INVALID_BOT_TOKEN'
+  | 'DISCORD_DM_UNAUTHORIZED'
   | 'DISCORD_DM_FORBIDDEN'
-  | 'DISCORD_USER_NOT_FOUND'
+  | 'DISCORD_DM_NOT_FOUND'
   | 'DISCORD_DM_RATE_LIMITED'
   | 'DISCORD_API_ERROR'
-  | 'DISCORD_NETWORK_TIMEOUT'
+  | 'DISCORD_NETWORK_ERROR'
   | 'DUPLICATE_NOTIFICATION_SKIPPED'
   | 'INVALID_DISCORD_ID';
 
@@ -125,9 +124,9 @@ function formatRuntimeLabel(runtimeCode: string, version: string): string {
 }
 
 function mapDiscordStatusToFailureReason(status: number): DiscordDmFailureReason {
-  if (status === 401) return 'DISCORD_INVALID_BOT_TOKEN';
+  if (status === 401) return 'DISCORD_DM_UNAUTHORIZED';
   if (status === 403) return 'DISCORD_DM_FORBIDDEN';
-  if (status === 404) return 'DISCORD_USER_NOT_FOUND';
+  if (status === 404) return 'DISCORD_DM_NOT_FOUND';
   if (status === 429) return 'DISCORD_DM_RATE_LIMITED';
   return 'DISCORD_API_ERROR';
 }
@@ -387,12 +386,12 @@ async function deliverDiscordDirectMessage(
   if (!botToken) {
     logger.warn('Discord DM notification failed', {
       context: contextLabel,
-      reason: 'DISCORD_BOT_TOKEN_NOT_CONFIGURED',
+      reason: 'DISCORD_DM_NOT_CONFIGURED',
       userId: safeUserId,
     });
     return {
       ok: false,
-      reason: 'DISCORD_BOT_TOKEN_NOT_CONFIGURED',
+      reason: 'DISCORD_DM_NOT_CONFIGURED',
     };
   }
 
@@ -515,13 +514,12 @@ async function deliverDiscordDirectMessage(
     const isTimeout =
       err instanceof Error &&
       (err.name === 'TimeoutError' || err.name === 'AbortError');
-    const reason: DiscordDmFailureReason = isTimeout
-      ? 'DISCORD_NETWORK_TIMEOUT'
-      : 'DISCORD_API_ERROR';
+    const reason: DiscordDmFailureReason = 'DISCORD_NETWORK_ERROR';
 
     logger.warn('Discord DM notification failed', {
       context: contextLabel,
       reason,
+      timeout: isTimeout,
       errorName: err instanceof Error ? err.name : 'NetworkError',
       userId: safeUserId,
     });
@@ -541,12 +539,12 @@ export async function sendDiscordLoginNotification(
   if (!config.discord.botToken) {
     logger.warn('Discord DM notification failed', {
       context: 'login',
-      reason: 'DISCORD_BOT_TOKEN_NOT_CONFIGURED',
+      reason: 'DISCORD_DM_NOT_CONFIGURED',
       userId: safeUserId,
     });
     return {
       ok: false,
-      reason: 'DISCORD_BOT_TOKEN_NOT_CONFIGURED',
+      reason: 'DISCORD_DM_NOT_CONFIGURED',
     };
   }
 
@@ -587,13 +585,13 @@ export async function sendDiscordHostCreatedNotification(
 
   if (!config.discord.botToken) {
     logger.warn('DISCORD_HOST_NOTIFICATION_FAILED', {
-      reason: 'DISCORD_BOT_TOKEN_NOT_CONFIGURED',
+      reason: 'DISCORD_DM_NOT_CONFIGURED',
       hostId: payload.serverId,
       userId: safeUserId,
     });
     return {
       ok: false,
-      reason: 'DISCORD_BOT_TOKEN_NOT_CONFIGURED',
+      reason: 'DISCORD_DM_NOT_CONFIGURED',
     };
   }
 
@@ -652,7 +650,7 @@ export async function probeDiscordBotApiHealth(): Promise<{
       configured: false,
       reachable: false,
       statusCode: null,
-      reason: 'DISCORD_BOT_TOKEN_NOT_CONFIGURED',
+      reason: 'DISCORD_DM_NOT_CONFIGURED',
     };
   }
 
@@ -685,7 +683,7 @@ export async function probeDiscordBotApiHealth(): Promise<{
       configured: true,
       reachable: false,
       statusCode: null,
-      reason: 'DISCORD_NETWORK_TIMEOUT',
+      reason: 'DISCORD_NETWORK_ERROR',
     };
   }
 }

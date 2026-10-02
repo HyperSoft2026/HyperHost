@@ -164,6 +164,7 @@ export const CreateNodeSchema = z.object({
   maxMemoryMb: z.number().int().min(1024).max(1048576),
   maxDiskMb: z.number().int().min(5120).max(10485760),
   maxCpuPercent: z.number().int().min(100).max(12800).default(1000),
+  agentToken: z.string().trim().min(16).max(256).optional(),
 });
 
 export const CreateNodeAllocationBatchSchema = z.object({

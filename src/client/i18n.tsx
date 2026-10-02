@@ -81,8 +81,14 @@ const dictionary = {
     dashboardSubtitle:
       'أدر استضافاتك، وتابع حالة بيئة التشغيل، واضبط إعدادات الإقلاع ومتغيرات البيئة المشفرة.',
     discordLoginSuccessTitle: 'تم تسجيل الدخول بنجاح إلى HyperHost',
-    discordLoginSuccessDesc:
-      'جلستك الآن نشطة ومؤمّنة، وتم إرسال إشعار تسجيل الدخول عبر رسالة خاصة (DM) في Discord.',
+    discordLoginSuccessDesc: 'تم إرسال إشعار تسجيل الدخول إلى Discord.',
+    discordLoginDmSentMsg: 'تم إرسال إشعار تسجيل الدخول إلى Discord.',
+    discordLoginDmFailedMsg:
+      'تم تسجيل الدخول بنجاح، لكن تعذر إرسال إشعار Discord.',
+    discordHostCreatedDmSentMsg:
+      'تم إنشاء الاستضافة بنجاح، وتم إرسال إشعار التفاصيل إلى Discord.',
+    discordHostCreatedDmFailedMsg:
+      'تم إنشاء الاستضافة بنجاح، لكن تعذر إرسال إشعار Discord.',
     dismiss: 'إغلاق',
     totalHosts: 'الاستضافات الحالية',
     onlineHosts: 'الاستضافات المتصلة',
@@ -318,13 +324,12 @@ const dictionary = {
     'runtime.host.stopped': 'متوقفة (STOPPED)',
     'runtime.host.error': 'خطأ في التشغيل (ERROR)',
     'discord.login.title': '🔐 تم تسجيل الدخول بنجاح إلى HyperHost',
-    'discord.login.success':
-      'تم تسجيل الدخول بنجاح وإرسال إشعار أمني إلى رسائل Discord الخاصة بك.',
+    'discord.login.success': 'تم إرسال إشعار تسجيل الدخول إلى Discord.',
     'discord.host.created.title': '🚀 تم إنشاء استضافتك في HyperHost',
     'discord.host.created.success':
-      'تم إنشاء الاستضافة بنجاح وإرسال تفاصيلها إلى رسائل Discord الخاصة بك.',
+      'تم إنشاء الاستضافة بنجاح، وتم إرسال إشعار التفاصيل إلى Discord.',
     'discord.notification.failed':
-      'تعذّر إرسال إشعار Discord عبر الرسائل الخاصة (تحقق من إعدادات الخصوصية أو توكن البوت).',
+      'تم تسجيل الدخول بنجاح، لكن تعذر إرسال إشعار Discord.',
     'console.connecting': 'جارٍ الاتصال بالطرفية...',
     'console.connected': 'متصل بعقدة التشغيل',
     'console.disconnected': 'غير متصل بالطرفية',
@@ -401,8 +406,14 @@ const dictionary = {
     dashboardSubtitle:
       'Manage your Discord & Telegram Bot Hosts, inspect runtime status, and configure encrypted startup environments.',
     discordLoginSuccessTitle: 'Signed in to HyperHost via Discord',
-    discordLoginSuccessDesc:
-      'Your session is active and a Discord login DM notification has been dispatched to your account.',
+    discordLoginSuccessDesc: 'Login notification was sent to Discord.',
+    discordLoginDmSentMsg: 'Login notification was sent to Discord.',
+    discordLoginDmFailedMsg:
+      'Login succeeded, but the Discord notification could not be delivered.',
+    discordHostCreatedDmSentMsg:
+      'Host created successfully, and notification was sent to Discord.',
+    discordHostCreatedDmFailedMsg:
+      'Host created successfully, but the Discord notification could not be delivered.',
     dismiss: 'Dismiss',
     totalHosts: 'Current Hosts',
     onlineHosts: 'Online Hosts',
@@ -638,13 +649,12 @@ const dictionary = {
     'runtime.host.stopped': 'Stopped (STOPPED)',
     'runtime.host.error': 'Runtime Error (ERROR)',
     'discord.login.title': '🔐 HyperHost Login Successful',
-    'discord.login.success':
-      'Signed in successfully and delivered a security notification to your Discord DMs.',
+    'discord.login.success': 'Login notification was sent to Discord.',
     'discord.host.created.title': '🚀 HyperHost Host Created',
     'discord.host.created.success':
-      'Host created successfully and details sent to your Discord DMs.',
+      'Host created successfully, and notification was sent to Discord.',
     'discord.notification.failed':
-      'Could not deliver Discord DM notification (verify DM privacy settings or bot token).',
+      'Login succeeded, but the Discord notification could not be delivered.',
     'console.connecting': 'Connecting to console...',
     'console.connected': 'Connected to Runtime Node',
     'console.disconnected': 'Console disconnected',

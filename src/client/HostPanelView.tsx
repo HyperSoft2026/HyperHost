@@ -313,7 +313,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
     setPanelError(null);
     setPanelNotice(null);
     if (!hostId) {
-      setPanelError('[RUNTIME_NODE_UNAVAILABLE] No runtime node is currently available.');
+      setPanelError(`[RUNTIME_NODE_UNAVAILABLE] ${t['runtime.node.unavailable']}`);
       return;
     }
     try {
@@ -321,13 +321,21 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
         method: 'POST',
         body: JSON.stringify({ action }),
       });
-      setPanelNotice(`Dispatched ${action.toUpperCase()} signal to Runtime Node.`);
+      setPanelNotice(
+        isRtl
+          ? `تم إرسال إشارة (${action.toUpperCase()}) إلى عقدة التشغيل.`
+          : `Dispatched ${action.toUpperCase()} signal to Runtime Node.`
+      );
       void loadHostDetail();
     } catch (err) {
       if (err instanceof ClientApiError) {
         setPanelError(`[${err.code}] ${err.message}`);
       } else {
-        setPanelError('Management command failed.');
+        setPanelError(
+          isRtl
+            ? 'فشل إرسال أمر إدارة التشغيل.'
+            : 'Management command failed.'
+        );
       }
     }
   }
@@ -400,7 +408,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
     e.preventDefault();
     setPanelError(null);
     if (!hostId) {
-      setPanelError('[RUNTIME_NODE_UNAVAILABLE] No runtime node is currently available.');
+      setPanelError(`[RUNTIME_NODE_UNAVAILABLE] ${t['runtime.node.unavailable']}`);
       return;
     }
     try {
@@ -413,7 +421,9 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
         }),
       });
       setDbName('');
-      setPanelNotice('Database provisioned.');
+      setPanelNotice(
+        isRtl ? 'تم إنشاء قاعدة البيانات بنجاح.' : 'Database provisioned.'
+      );
       void loadTabResource('databases');
     } catch (err) {
       if (err instanceof ClientApiError) {
@@ -426,7 +436,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
     e.preventDefault();
     setPanelError(null);
     if (!hostId) {
-      setPanelError('[RUNTIME_NODE_UNAVAILABLE] No runtime node is currently available.');
+      setPanelError(`[RUNTIME_NODE_UNAVAILABLE] ${t['runtime.node.unavailable']}`);
       return;
     }
     try {
@@ -438,7 +448,9 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
         }),
       });
       setBackupName('');
-      setPanelNotice('Backup snapshot completed.');
+      setPanelNotice(
+        isRtl ? 'تم إنشاء النسخة الاحتياطية بنجاح.' : 'Backup snapshot completed.'
+      );
       void loadTabResource('backups');
     } catch (err) {
       if (err instanceof ClientApiError) {
@@ -725,7 +737,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     );
                     setConsoleInput('');
                   } else {
-                    setPanelError(`[RUNTIME_NODE_UNAVAILABLE] ${t.runtimeNodeUnavailable}`);
+                    setPanelError(`[RUNTIME_NODE_UNAVAILABLE] ${t['runtime.node.unavailable']}`);
                   }
                 }}
                 className="border-t border-slate-800 bg-[#11131F] px-4 py-2.5 flex items-center gap-3"
@@ -776,7 +788,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     onClick={async () => {
                       if (!newFileName.trim()) return;
                       if (!hostId) {
-                        setFileError('[RUNTIME_NODE_UNAVAILABLE] No runtime node is currently available.');
+                        setFileError(`[RUNTIME_NODE_UNAVAILABLE] ${t['runtime.node.unavailable']}`);
                         return;
                       }
                       try {
@@ -805,7 +817,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
                     onClick={async () => {
                       if (!newFileName.trim()) return;
                       if (!hostId) {
-                        setFileError('[RUNTIME_NODE_UNAVAILABLE] No runtime node is currently available.');
+                        setFileError(`[RUNTIME_NODE_UNAVAILABLE] ${t['runtime.node.unavailable']}`);
                         return;
                       }
                       try {

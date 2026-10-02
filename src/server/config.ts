@@ -27,6 +27,7 @@ export interface ServerConfig {
   appUrl: string | undefined;
   publicUrl: string;
   corsOrigin: string;
+  runtimeNodeSecret: string | undefined;
 }
 
 const isProdFlag = process.argv.includes('--production');
@@ -39,24 +40,41 @@ const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 8080;
 
 const envSessionSecret = process.env.SESSION_SECRET?.trim();
 const envEncryptionKey = process.env.ENCRYPTION_KEY?.trim();
+const envRuntimeNodeSecret =
+  process.env.RUNTIME_NODE_SECRET?.trim() ||
+  process.env.NODE_TOKEN?.trim() ||
+  undefined;
 
 const rawAdminIds = (process.env.ADMIN_DISCORD_IDS || '')
   .split(',')
   .map((id) => id.trim())
   .filter(Boolean);
 
+function isValidProductionHttpUrl(candidate: string | undefined): boolean {
+  if (!candidate) return false;
+  if (
+    candidate.includes('.run.app') ||
+    candidate.includes('localhost') ||
+    candidate.includes('127.0.0.1')
+  ) {
+    return false;
+  }
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 function resolveCleanPublicUrl(): string {
   const candidates = [
     process.env.PUBLIC_URL?.trim(),
     process.env.APP_URL?.trim(),
+    process.env.BASE_URL?.trim(),
   ];
   for (const candidate of candidates) {
-    if (
-      candidate &&
-      !candidate.includes('.run.app') &&
-      !candidate.includes('localhost') &&
-      !candidate.includes('127.0.0.1')
-    ) {
+    if (candidate && isValidProductionHttpUrl(candidate)) {
       return candidate;
     }
   }
@@ -95,6 +113,7 @@ export const config: ServerConfig = {
   appUrl: resolvedPublicUrl,
   publicUrl: resolvedPublicUrl,
   corsOrigin: process.env.CORS_ORIGIN?.trim() || '*',
+  runtimeNodeSecret: envRuntimeNodeSecret,
 };
 
 export function isDiscordOAuthConfigured(): boolean {
@@ -109,34 +128,92 @@ export function isDiscordLoginNotificationConfigured(): boolean {
   return Boolean(config.discord.botToken);
 }
 
+export type EnvDiagnosticState = 'configured' | 'missing' | 'valid' | 'invalid';
+
 export interface EnvironmentDiagnosticsSummary {
-  DATABASE_URL: 'configured' | 'missing';
-  DISCORD_CLIENT_ID: 'configured' | 'missing';
-  DISCORD_CLIENT_SECRET: 'configured' | 'missing';
-  DISCORD_REDIRECT_URI: 'configured' | 'missing';
-  DISCORD_BOT_TOKEN: 'configured' | 'missing';
-  PUBLIC_URL: 'configured' | 'missing';
-  SESSION_SECRET: 'configured' | 'missing';
-  PORT: 'configured' | 'missing';
-  NODE_ENV: 'configured' | 'missing';
+  DATABASE_URL: EnvDiagnosticState;
+  SESSION_SECRET: EnvDiagnosticState;
+  ENCRYPTION_KEY: EnvDiagnosticState;
+  DISCORD_CLIENT_ID: EnvDiagnosticState;
+  DISCORD_CLIENT_SECRET: EnvDiagnosticState;
+  DISCORD_REDIRECT_URI: EnvDiagnosticState;
+  DISCORD_BOT_TOKEN: EnvDiagnosticState;
+  PUBLIC_URL: EnvDiagnosticState;
+  NODE_ENV: EnvDiagnosticState;
+  PORT: EnvDiagnosticState;
 }
 
 export function getEnvironmentDiagnosticsSummary(): EnvironmentDiagnosticsSummary {
-  const hasPublicUrlEnv = Boolean(
-    process.env.PUBLIC_URL?.trim() ||
-      process.env.APP_URL?.trim() ||
-      process.env.BASE_URL?.trim()
-  );
+  const explicitPublicUrl = process.env.PUBLIC_URL?.trim();
+  const fallbackAppUrl = [
+    process.env.APP_URL?.trim(),
+    process.env.BASE_URL?.trim(),
+  ].find((u) => u && isValidProductionHttpUrl(u));
+  const rawPublicUrl = explicitPublicUrl || fallbackAppUrl;
+  const rawRedirectUri = getDiscordRedirectUriOrNull();
+  const rawPort = process.env.PORT?.trim();
+  const rawNodeEnv = process.env.NODE_ENV?.trim();
+
+  const isDbValid =
+    config.databaseUrl &&
+    (config.databaseUrl.startsWith('postgresql://') ||
+      config.databaseUrl.startsWith('postgres://'));
+
+  const isRedirectValid = (() => {
+    if (!rawRedirectUri) return false;
+    try {
+      const u = new URL(rawRedirectUri);
+      return u.protocol === 'https:' || u.protocol === 'http:';
+    } catch {
+      return false;
+    }
+  })();
+
   return {
-    DATABASE_URL: config.databaseUrl ? 'configured' : 'missing',
-    DISCORD_CLIENT_ID: config.discord.clientId ? 'configured' : 'missing',
+    DATABASE_URL: !config.databaseUrl
+      ? 'missing'
+      : isDbValid
+      ? 'configured'
+      : 'invalid',
+    SESSION_SECRET: !envSessionSecret
+      ? 'missing'
+      : envSessionSecret.length >= 16
+      ? 'configured'
+      : 'invalid',
+    ENCRYPTION_KEY: !envEncryptionKey
+      ? config.sessionSecretConfigured
+        ? 'configured'
+        : 'missing'
+      : envEncryptionKey.length >= 16
+      ? 'configured'
+      : 'invalid',
+    DISCORD_CLIENT_ID: !config.discord.clientId
+      ? 'missing'
+      : /^\d{15,22}$/.test(config.discord.clientId)
+      ? 'configured'
+      : 'invalid',
     DISCORD_CLIENT_SECRET: config.discord.clientSecret ? 'configured' : 'missing',
-    DISCORD_REDIRECT_URI: getDiscordRedirectUriOrNull() ? 'configured' : 'missing',
+    DISCORD_REDIRECT_URI: !rawRedirectUri
+      ? 'missing'
+      : isRedirectValid
+      ? 'configured'
+      : 'invalid',
     DISCORD_BOT_TOKEN: config.discord.botToken ? 'configured' : 'missing',
-    PUBLIC_URL: hasPublicUrlEnv ? 'configured' : 'missing',
-    SESSION_SECRET: config.sessionSecretConfigured ? 'configured' : 'missing',
-    PORT: process.env.PORT?.trim() ? 'configured' : 'missing',
-    NODE_ENV: process.env.NODE_ENV?.trim() ? 'configured' : 'missing',
+    PUBLIC_URL: !rawPublicUrl
+      ? 'missing'
+      : isValidProductionHttpUrl(rawPublicUrl)
+      ? 'configured'
+      : 'invalid',
+    NODE_ENV: !rawNodeEnv
+      ? 'missing'
+      : ['development', 'production', 'test'].includes(rawNodeEnv)
+      ? 'configured'
+      : 'invalid',
+    PORT: !rawPort
+      ? 'missing'
+      : Number.isFinite(Number(rawPort)) && Number(rawPort) > 0
+      ? 'configured'
+      : 'invalid',
   };
 }
 

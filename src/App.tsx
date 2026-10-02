@@ -12,6 +12,7 @@ import {
   HardDrive,
   Terminal,
   CheckCircle2,
+  AlertCircle,
   Globe,
   Copy,
   Check,
@@ -51,6 +52,15 @@ export default function App() {
   const [initializing, setInitializing] = useState<boolean>(true);
   const [showDiscordLoginBanner, setShowDiscordLoginBanner] =
     useState<boolean>(false);
+  const [loginDmState, setLoginDmState] = useState<{
+    sent: boolean;
+    reason: string | null;
+  }>({ sent: false, reason: null });
+  const [hostCreatedDmBanner, setHostCreatedDmBanner] = useState<{
+    visible: boolean;
+    sent: boolean;
+    reason: string | null;
+  }>({ visible: false, sent: false, reason: null });
 
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
@@ -84,8 +94,16 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const isDiscordSuccess = params.get('login') === 'discord_success';
     if (isDiscordSuccess) {
+      const dmStatus = params.get('dm');
+      const dmReason = params.get('dm_reason');
+      setLoginDmState({
+        sent: dmStatus === 'sent',
+        reason: dmStatus === 'sent' ? null : dmReason || 'DISCORD_API_ERROR',
+      });
       setShowDiscordLoginBanner(true);
       params.delete('login');
+      params.delete('dm');
+      params.delete('dm_reason');
       const cleanSearch = params.toString();
       const targetPath =
         window.location.pathname === '/'
@@ -102,6 +120,13 @@ export default function App() {
 
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        const dmSent = Boolean(event.data?.dmSent);
+        const dmReason =
+          typeof event.data?.dmReason === 'string' ? event.data.dmReason : null;
+        setLoginDmState({
+          sent: dmSent,
+          reason: dmSent ? null : dmReason || 'DISCORD_API_ERROR',
+        });
         setShowDiscordLoginBanner(true);
         navigateTo('/dashboard', true);
         void bootstrapApp(true);
@@ -564,23 +589,75 @@ export default function App() {
         </header>
 
         <main className="flex-1 p-5 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-8">
-          {/* In-App Discord Login Notification Banner */}
+          {/* In-App Discord Login Notification Banner (Reflects Real Discord API Result) */}
           {showDiscordLoginBanner && (
-            <div className="p-4 rounded-xl bg-violet-950/40 border border-violet-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div
+              className={`p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                loginDmState.sent
+                  ? 'bg-violet-950/40 border border-violet-500/40'
+                  : 'bg-amber-950/35 border border-amber-500/40'
+              }`}
+            >
               <div className="flex items-start sm:items-center gap-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
+                {loginDmState.sent ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                )}
                 <div className="text-xs space-y-0.5">
                   <div className="font-bold text-white">
                     {t.discordLoginSuccessTitle} — {user.displayName} (@{user.username})
                   </div>
-                  <div className="text-slate-300">
-                    {t.discordLoginSuccessDesc}
+                  <div className="text-slate-200">
+                    {loginDmState.sent
+                      ? t.discordLoginDmSentMsg
+                      : t.discordLoginDmFailedMsg}
                   </div>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowDiscordLoginBanner(false)}
+                className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-900/80 border border-slate-700 rounded-lg self-end sm:self-center cursor-pointer"
+              >
+                {t.dismiss}
+              </button>
+            </div>
+          )}
+
+          {/* In-App Host Created Discord Notification Banner (Reflects Real Discord API Result) */}
+          {hostCreatedDmBanner.visible && (
+            <div
+              className={`p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                hostCreatedDmBanner.sent
+                  ? 'bg-emerald-950/35 border border-emerald-500/40'
+                  : 'bg-amber-950/35 border border-amber-500/40'
+              }`}
+            >
+              <div className="flex items-start sm:items-center gap-3">
+                {hostCreatedDmBanner.sent ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                )}
+                <div className="text-xs space-y-0.5">
+                  <div className="text-slate-200 font-medium">
+                    {hostCreatedDmBanner.sent
+                      ? t.discordHostCreatedDmSentMsg
+                      : t.discordHostCreatedDmFailedMsg}
+                  </div>
+                  {!hostCreatedDmBanner.sent && hostCreatedDmBanner.reason && (
+                    <div className="font-mono text-[11px] text-amber-300/90" dir="ltr">
+                      {hostCreatedDmBanner.reason}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setHostCreatedDmBanner((prev) => ({ ...prev, visible: false }))
+                }
                 className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-900/80 border border-slate-700 rounded-lg self-end sm:self-center cursor-pointer"
               >
                 {t.dismiss}
@@ -884,13 +961,21 @@ export default function App() {
       <CreateHostModal
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
-        onCreated={(newHostId) => {
+        onCreated={(newHostId, notification) => {
+          if (notification) {
+            setHostCreatedDmBanner({
+              visible: true,
+              sent: Boolean(notification.sent),
+              reason: notification.reason ?? null,
+            });
+          }
           void loadHostsDashboard();
           setSelectedHostId(newHostId);
           navigateTo(`/hosts/${encodeURIComponent(newHostId)}`);
         }}
         currentHostCount={totalHostsCount}
         availableNodes={availableNodes}
+        isAdmin={user.role === 'ADMIN'}
       />
     </div>
   );

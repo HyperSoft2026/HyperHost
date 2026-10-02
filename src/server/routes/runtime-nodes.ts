@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { config } from '../config';
 import { getPrismaOrThrow } from '../database';
 import { hashToken } from '../crypto';
 import { AppError } from '../errors';
@@ -14,13 +15,31 @@ function verifyNodeTokenConstantTime(
 ): boolean {
   const actualHash = hashToken(rawToken);
   try {
-    return crypto.timingSafeEqual(
-      Buffer.from(actualHash, 'utf8'),
-      Buffer.from(expectedHash, 'utf8')
-    );
+    if (
+      crypto.timingSafeEqual(
+        Buffer.from(actualHash, 'utf8'),
+        Buffer.from(expectedHash, 'utf8')
+      )
+    ) {
+      return true;
+    }
   } catch {
-    return false;
+    // Fall through to check server-level RUNTIME_NODE_SECRET if configured
   }
+
+  if (config.runtimeNodeSecret) {
+    const serverSecretHash = hashToken(config.runtimeNodeSecret);
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(actualHash, 'utf8'),
+        Buffer.from(serverSecretHash, 'utf8')
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 export async function registerRuntimeNodeRoutes(

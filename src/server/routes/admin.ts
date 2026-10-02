@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { recordActivityLog, requireAdmin } from '../auth';
-import { getEnvironmentDiagnosticsSummary } from '../config';
+import { config, getEnvironmentDiagnosticsSummary } from '../config';
 import { checkDatabaseHealth, getPrismaOrThrow } from '../database';
 import { probeDiscordBotApiHealth } from '../discord-notify';
 import { generateSecureToken, hashToken } from '../crypto';
@@ -732,7 +732,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     }
 
     // Generate one-time Runtime Node daemon token; store only HMAC-SHA256 hash
-    const rawAgentToken = `hhnode_${generateSecureToken(24)}`;
+    // Never return raw agent token to the frontend; store only HMAC-SHA256 hash in PostgreSQL
+    const rawAgentToken =
+      body.agentToken ||
+      config.runtimeNodeSecret ||
+      `hhnode_${generateSecureToken(24)}`;
     const agentTokenHash = hashToken(rawAgentToken);
 
     const node = await prisma.node.create({
@@ -781,7 +785,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           maxCpuPercent: node.maxCpuPercent,
           createdAt: node.createdAt.toISOString(),
         },
-        agentProvisioningToken: rawAgentToken,
+        tokenConfigured: true,
       },
     };
   });

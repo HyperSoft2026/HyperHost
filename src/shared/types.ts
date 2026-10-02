@@ -259,7 +259,7 @@ export interface HealthReportDTO {
     maxHostsPerUser: number;
   };
   diagnostics?: {
-    env: Record<string, 'configured' | 'missing'>;
+    env: Record<string, 'configured' | 'missing' | 'valid' | 'invalid'>;
   };
   timestamp: string;
 }

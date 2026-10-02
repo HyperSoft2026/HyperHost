@@ -12,7 +12,10 @@ import { useI18n } from './i18n';
 interface CreateHostModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreated: (hostId: string) => void;
+  onCreated: (
+    hostId: string,
+    notification?: { sent: boolean; reason: string | null }
+  ) => void;
   currentHostCount: number;
   availableNodes: Array<{
     id: string;
@@ -20,6 +23,7 @@ interface CreateHostModalProps {
     location: string;
     liveConnected: boolean;
   }>;
+  isAdmin?: boolean;
 }
 
 export const CreateHostModal: React.FC<CreateHostModalProps> = ({
@@ -28,8 +32,9 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
   onCreated,
   currentHostCount,
   availableNodes,
+  isAdmin = false,
 }) => {
-  const { t } = useI18n();
+  const { t, isRtl } = useI18n();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<HostTypeCode>('DISCORD_BOT');
@@ -52,7 +57,11 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
     setError(null);
 
     if (currentHostCount >= MAX_HOSTS_PER_USER) {
-      setError(`Account limit reached (${MAX_HOSTS_PER_USER} Hosts maximum).`);
+      setError(
+        isRtl
+          ? `تم الوصول إلى الحد الأقصى للحساب (${MAX_HOSTS_PER_USER} استضافات).`
+          : `Account limit reached (${MAX_HOSTS_PER_USER} Hosts maximum).`
+      );
       return;
     }
 
@@ -60,6 +69,7 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
     try {
       const res = await apiFetch<{
         host: { id: string; publicId?: string; serverId?: string };
+        notification?: { sent: boolean; reason: string | null };
       }>('/api/hosts', {
         method: 'POST',
         body: JSON.stringify({
@@ -68,19 +78,22 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
           type,
           runtime,
           runtimeVersion,
-          nodeId: nodeId || null,
+          nodeId: isAdmin && nodeId ? nodeId : null,
           memoryLimitMb: Number(memoryLimitMb),
           cpuLimitPercent: Number(cpuLimitPercent),
           diskLimitMb: Number(diskLimitMb),
         }),
       });
-      onCreated(res.host.serverId || res.host.publicId || res.host.id);
+      onCreated(
+        res.host.serverId || res.host.publicId || res.host.id,
+        res.notification
+      );
       onClose();
     } catch (err) {
       if (err instanceof ClientApiError) {
         setError(`[${err.code}] ${err.message}`);
       } else {
-        setError('Failed to create Host.');
+        setError(isRtl ? 'تعذّر إنشاء الاستضافة.' : 'Failed to create Host.');
       }
     } finally {
       setSubmitting(false);
@@ -215,23 +228,25 @@ export const CreateHostModal: React.FC<CreateHostModalProps> = ({
               />
             </div>
 
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                {t.targetNodeLabel}
-              </label>
-              <select
-                value={nodeId}
-                onChange={(e) => setNodeId(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
-              >
-                <option value="">{t.unassignedNodeOption}</option>
-                {availableNodes.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.name} ({n.location}) — {n.liveConnected ? 'ONLINE' : 'OFFLINE'}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isAdmin && (
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  {t.targetNodeLabel}
+                </label>
+                <select
+                  value={nodeId}
+                  onChange={(e) => setNodeId(e.target.value)}
+                  className="w-full px-3.5 py-2 text-sm bg-[#090A10] border border-slate-800 rounded-lg text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">{t.unassignedNodeOption}</option>
+                  {availableNodes.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name} ({n.location}) — {n.liveConnected ? 'ONLINE' : 'OFFLINE'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1.5">

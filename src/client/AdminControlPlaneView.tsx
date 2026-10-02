@@ -54,7 +54,6 @@ export const AdminControlPlaneView: React.FC<{
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [newToken, setNewToken] = useState<string | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -253,9 +252,8 @@ export const AdminControlPlaneView: React.FC<{
     e.preventDefault();
     setError(null);
     setNotice(null);
-    setNewToken(null);
     try {
-      const res = await apiFetch<{ node: any; agentProvisioningToken: string }>(
+      const res = await apiFetch<{ node: any; tokenConfigured?: boolean }>(
         '/api/admin/nodes',
         {
           method: 'POST',
@@ -271,8 +269,11 @@ export const AdminControlPlaneView: React.FC<{
           }),
         }
       );
-      setNotice(`Registered Runtime Node "${res.node.name}" (${res.node.publicId}).`);
-      setNewToken(res.agentProvisioningToken);
+      setNotice(
+        isRtl
+          ? `تم تسجيل عقدة التشغيل "${res.node.name}" (${res.node.publicId}) بنجاح.`
+          : `Registered Runtime Node "${res.node.name}" (${res.node.publicId}).`
+      );
       setNodeName('');
       setNodeLocation('');
       setNodeFqdn('');
@@ -418,11 +419,6 @@ export const AdminControlPlaneView: React.FC<{
               <X className="w-4 h-4" />
             </button>
           </div>
-          {newToken && (
-            <div className="p-2.5 rounded bg-black/50 font-mono text-[11px] text-amber-300" dir="ltr">
-              One-Time Node Agent Token (Save now — stored as HMAC-SHA256 hash): {newToken}
-            </div>
-          )}
         </div>
       )}
 
