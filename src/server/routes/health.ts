@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { checkDatabaseHealth, getPrismaOrThrow } from '../database';
-import { isDiscordOAuthConfigured, resolveDiscordRedirectUri } from '../config';
+import { isDiscordOAuthConfigured } from '../config';
 import { runtimeRegistry } from '../../runtime/registry';
 import { MAX_HOSTS_PER_USER, type HealthReportDTO } from '../../shared/types';
 
@@ -26,7 +26,6 @@ export async function registerHealthRoutes(app: FastifyInstance): Promise<void> 
       database: dbHealth,
       auth: {
         discordOAuthConfigured: isDiscordOAuthConfigured(),
-        callbackUrl: resolveDiscordRedirectUri(),
       },
       runtime: {
         connectedNodes,

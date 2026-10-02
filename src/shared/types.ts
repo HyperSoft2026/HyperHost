@@ -213,7 +213,6 @@ export interface HealthReportDTO {
   };
   auth: {
     discordOAuthConfigured: boolean;
-    callbackUrl: string;
   };
   runtime: {
     connectedNodes: number;

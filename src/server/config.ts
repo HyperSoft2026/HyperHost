@@ -1,10 +1,14 @@
+import crypto from 'node:crypto';
+
 export interface ServerConfig {
   nodeEnv: 'development' | 'production' | 'test';
   port: number;
   host: string;
   databaseUrl: string | undefined;
   sessionSecret: string;
+  sessionSecretConfigured: boolean;
   encryptionKey: string;
+  encryptionKeyConfigured: boolean;
   discord: {
     clientId: string | undefined;
     clientSecret: string | undefined;
@@ -14,22 +18,27 @@ export interface ServerConfig {
   corsOrigin: string;
 }
 
-const rawEnv = process.env.NODE_ENV;
+const isProdFlag = process.argv.includes('--production');
+const rawEnv = isProdFlag ? 'production' : process.env.NODE_ENV;
 const nodeEnv: ServerConfig['nodeEnv'] =
   rawEnv === 'production' || rawEnv === 'test' ? rawEnv : 'development';
 
+const parsedPort = Number.parseInt(process.env.PORT || '', 10);
+const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 8080;
+
+const envSessionSecret = process.env.SESSION_SECRET?.trim();
+const envEncryptionKey = process.env.ENCRYPTION_KEY?.trim();
+
 export const config: ServerConfig = {
   nodeEnv,
-  port: Number(process.env.PORT) || 3000,
-  host: process.env.HOST || '0.0.0.0',
+  port,
+  host: process.env.HOST?.trim() || '0.0.0.0',
   databaseUrl: process.env.DATABASE_URL?.trim() || undefined,
-  sessionSecret:
-    process.env.SESSION_SECRET?.trim() ||
-    'hyperhost-ephemeral-session-secret-configure-in-production-env',
+  sessionSecret: envSessionSecret || crypto.randomBytes(64).toString('hex'),
+  sessionSecretConfigured: Boolean(envSessionSecret),
   encryptionKey:
-    process.env.ENCRYPTION_KEY?.trim() ||
-    process.env.SESSION_SECRET?.trim() ||
-    'hyperhost-ephemeral-aes-key-configure-in-production-env',
+    envEncryptionKey || envSessionSecret || crypto.randomBytes(64).toString('hex'),
+  encryptionKeyConfigured: Boolean(envEncryptionKey || envSessionSecret),
   discord: {
     clientId: process.env.DISCORD_CLIENT_ID?.trim() || undefined,
     clientSecret: process.env.DISCORD_CLIENT_SECRET?.trim() || undefined,
@@ -40,16 +49,13 @@ export const config: ServerConfig = {
 };
 
 export function isDiscordOAuthConfigured(): boolean {
-  return Boolean(config.discord.clientId && config.discord.clientSecret);
+  return Boolean(
+    config.discord.clientId &&
+      config.discord.clientSecret &&
+      config.discord.redirectUri
+  );
 }
 
-export function resolveDiscordRedirectUri(requestOrigin?: string): string {
-  if (config.discord.redirectUri) {
-    return config.discord.redirectUri;
-  }
-  const base = (config.appUrl || requestOrigin || `http://localhost:${config.port}`).replace(
-    /\/+$/,
-    ''
-  );
-  return `${base}/api/auth/discord/callback`;
+export function getDiscordRedirectUriOrNull(): string | null {
+  return config.discord.redirectUri || null;
 }

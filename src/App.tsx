@@ -31,7 +31,6 @@ export default function App() {
   const [health, setHealth] = useState<HealthReportDTO | null>(null);
   const [user, setUser] = useState<AuthenticatedUserDTO | null>(null);
   const [authenticated, setAuthenticated] = useState<boolean>(false);
-  const [inspectorMode, setInspectorMode] = useState<boolean>(false);
   const [initializing, setInitializing] = useState<boolean>(true);
 
   const [section, setSection] = useState<WorkspaceSection>('dashboard');
@@ -39,7 +38,6 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [createModalOpen, setCreateModalOpen] = useState<boolean>(false);
 
-  // Dashboard Real Data State (Strictly from API — never hardcoded fake arrays)
   const [hosts, setHosts] = useState<HostSummaryDTO[]>([]);
   const [availableNodes, setAvailableNodes] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
@@ -72,7 +70,6 @@ export default function App() {
       if (authRes?.authenticated && authRes.user) {
         setAuthenticated(true);
         setUser(authRes.user);
-        setInspectorMode(false);
         await loadHostsDashboard();
       } else {
         setAuthenticated(false);
@@ -93,6 +90,9 @@ export default function App() {
       setHosts(data.hosts);
       setAvailableNodes(data.availableNodes);
       setRecentActivity(data.recentActivity);
+      if (data.hosts.length > 0 && !selectedHostId) {
+        setSelectedHostId(data.hosts[0].id);
+      }
     } catch {
       setHosts([]);
       setAvailableNodes([]);
@@ -103,9 +103,9 @@ export default function App() {
   async function handleLogout() {
     await apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => null);
     setAuthenticated(false);
-    setInspectorMode(false);
     setUser(null);
     setHosts([]);
+    setSelectedHostId(null);
   }
 
   if (initializing) {
@@ -124,15 +124,11 @@ export default function App() {
     );
   }
 
-  if (!authenticated && !inspectorMode) {
+  if (!authenticated || !user) {
     return (
       <LoginView
         health={health}
         onRefreshAuth={() => void bootstrapApp()}
-        onOpenInspector={() => {
-          setInspectorMode(true);
-          setSection('dashboard');
-        }}
       />
     );
   }
@@ -164,31 +160,35 @@ export default function App() {
               <span>Dashboard & Hosts</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setSection('host-panel')}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2.5 transition-colors cursor-pointer ${
-                section === 'host-panel'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <Terminal className="w-4 h-4" />
-              <span>Host Control Panel</span>
-            </button>
+            {selectedHostId && (
+              <button
+                type="button"
+                onClick={() => setSection('host-panel')}
+                className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2.5 transition-colors cursor-pointer ${
+                  section === 'host-panel'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Terminal className="w-4 h-4" />
+                <span>Host Control Panel</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => setSection('admin')}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2.5 transition-colors cursor-pointer ${
-                section === 'admin'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-              }`}
-            >
-              <Shield className="w-4 h-4" />
-              <span>Control Plane Admin</span>
-            </button>
+            {user.role === 'ADMIN' && (
+              <button
+                type="button"
+                onClick={() => setSection('admin')}
+                className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2.5 transition-colors cursor-pointer ${
+                  section === 'admin'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Shield className="w-4 h-4" />
+                <span>Control Plane Admin</span>
+              </button>
+            )}
           </nav>
         </div>
 
@@ -214,10 +214,10 @@ export default function App() {
           <div className="flex items-center justify-between px-1">
             <div className="truncate">
               <div className="text-xs font-semibold text-white truncate">
-                {user ? user.displayName : 'Unauthenticated Inspector'}
+                {user.displayName}
               </div>
               <div className="text-[11px] text-slate-400 truncate">
-                {user ? `@${user.username}` : 'Read-Only Preview'}
+                @{user.username}
               </div>
             </div>
             <button
@@ -256,32 +256,36 @@ export default function App() {
           >
             Dashboard & Hosts
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSection('host-panel');
-              setMobileMenuOpen(false);
-            }}
-            className="block w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800"
-          >
-            Host Control Panel
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSection('admin');
-              setMobileMenuOpen(false);
-            }}
-            className="block w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800"
-          >
-            Control Plane Admin
-          </button>
+          {selectedHostId && (
+            <button
+              type="button"
+              onClick={() => {
+                setSection('host-panel');
+                setMobileMenuOpen(false);
+              }}
+              className="block w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800"
+            >
+              Host Control Panel
+            </button>
+          )}
+          {user.role === 'ADMIN' && (
+            <button
+              type="button"
+              onClick={() => {
+                setSection('admin');
+                setMobileMenuOpen(false);
+              }}
+              className="block w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-200 hover:bg-slate-800"
+            >
+              Control Plane Admin
+            </button>
+          )}
           <button
             type="button"
             onClick={handleLogout}
             className="block w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-red-400 hover:bg-slate-800"
           >
-            Exit to Login
+            Sign Out
           </button>
         </div>
       )}
@@ -321,7 +325,7 @@ export default function App() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h1 className="text-2xl font-bold text-white">
-                    Welcome, {user ? user.displayName : 'Operator'}
+                    Welcome, {user.displayName}
                   </h1>
                   <p className="text-xs text-slate-400 mt-1">
                     Manage your Discord & Telegram Bot Hosts, monitor Runtime Node connectivity, and configure startup environments.
@@ -411,7 +415,7 @@ export default function App() {
                         No Hosts Provisioned Yet
                       </div>
                       <p className="text-xs text-slate-400 max-w-md mx-auto">
-                        Create your first Discord Bot, Telegram Bot, Node.js, Python, Java, Go, or Rust Host, or open the Host Panel to inspect Console, Startup, Network, and Permissions.
+                        Create your first Discord Bot, Telegram Bot, Node.js, Python, Java, Go, or Rust Host.
                       </p>
                     </div>
                     <div className="flex items-center justify-center gap-3">
@@ -421,13 +425,6 @@ export default function App() {
                         className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg cursor-pointer"
                       >
                         Create Host
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSection('host-panel')}
-                        className="px-4 py-2 text-xs font-medium bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-lg cursor-pointer"
-                      >
-                        Open Host Panel Workspace
                       </button>
                     </div>
                   </div>
@@ -527,10 +524,9 @@ export default function App() {
             </>
           )}
 
-          {section === 'host-panel' && (
+          {section === 'host-panel' && selectedHostId && (
             <HostPanelView
               hostId={selectedHostId}
-              inspectorMode={inspectorMode}
               onBack={() => setSection('dashboard')}
               onHostDeleted={() => {
                 setSelectedHostId(null);
@@ -540,7 +536,7 @@ export default function App() {
             />
           )}
 
-          {section === 'admin' && <AdminControlPlaneView />}
+          {section === 'admin' && user.role === 'ADMIN' && <AdminControlPlaneView />}
         </main>
       </div>
 

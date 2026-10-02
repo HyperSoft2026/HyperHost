@@ -26,6 +26,12 @@ async function bootstrapControlPlane() {
 
   app.setErrorHandler(globalErrorHandler);
 
+  if (!config.sessionSecretConfigured) {
+    logger.warn(
+      'SESSION_SECRET is not set in environment; generated ephemeral cryptographic secret for this process.'
+    );
+  }
+
   // Security headers
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: false,
@@ -35,7 +41,10 @@ async function bootstrapControlPlane() {
 
   // CORS configuration
   await app.register(fastifyCors, {
-    origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map((o) => o.trim()),
+    origin:
+      config.corsOrigin === '*'
+        ? true
+        : config.corsOrigin.split(',').map((o) => o.trim()),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
@@ -59,15 +68,21 @@ async function bootstrapControlPlane() {
     },
   });
 
-  // Serve Official Logo from /assets/Logo.png
-  const assetsDir = path.resolve(process.cwd(), 'assets');
-  if (fs.existsSync(assetsDir)) {
-    await app.register(fastifyStatic, {
-      root: assetsDir,
-      prefix: '/assets/',
-      decorateReply: false,
-    });
-  }
+  // Serve Official Logo from assets/Logo.png without shadowing dist/assets/* bundles
+  const officialLogoPath = path.resolve(process.cwd(), 'assets', 'Logo.png');
+  app.get('/assets/Logo.png', (_request, reply) => {
+    if (!fs.existsSync(officialLogoPath)) {
+      reply.status(404).send({
+        success: false,
+        error: { code: 'LOGO_NOT_FOUND', message: 'Official Logo.png not found' },
+      });
+      return;
+    }
+    reply
+      .header('Content-Type', 'image/png')
+      .header('Cache-Control', 'public, max-age=86400')
+      .send(fs.createReadStream(officialLogoPath));
+  });
 
   // Register Control Plane API Routes
   await registerHealthRoutes(app);
@@ -77,7 +92,9 @@ async function bootstrapControlPlane() {
   await registerAdminRoutes(app);
 
   const distDir = path.resolve(process.cwd(), 'dist');
-  const isProd = config.nodeEnv === 'production' && fs.existsSync(path.join(distDir, 'index.html'));
+  const distIndexPath = path.join(distDir, 'index.html');
+  const isProd =
+    config.nodeEnv === 'production' && fs.existsSync(distIndexPath);
 
   if (isProd) {
     await app.register(fastifyStatic, {
@@ -87,7 +104,7 @@ async function bootstrapControlPlane() {
       wildcard: false,
     });
 
-    const indexHtml = fs.readFileSync(path.join(distDir, 'index.html'), 'utf-8');
+    const indexHtml = fs.readFileSync(distIndexPath, 'utf-8');
 
     app.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith('/api/')) {
@@ -133,7 +150,9 @@ async function bootstrapControlPlane() {
 
   // Graceful Shutdown
   const shutdown = async (signal: string) => {
-    logger.info(`Received ${signal}. Shutting down HyperHost Control Plane gracefully...`);
+    logger.info(
+      `Received ${signal}. Shutting down HyperHost Control Plane gracefully...`
+    );
     controlPlaneScheduler.stop();
     await app.close();
     await disconnectDatabase();
@@ -152,6 +171,7 @@ async function bootstrapControlPlane() {
     host: config.host,
     port: config.port,
     environment: config.nodeEnv,
+    servingBuiltFrontend: isProd,
   });
 }
 

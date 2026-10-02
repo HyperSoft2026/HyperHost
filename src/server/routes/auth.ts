@@ -1,8 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   config,
+  getDiscordRedirectUriOrNull,
   isDiscordOAuthConfigured,
-  resolveDiscordRedirectUri,
 } from '../config';
 import {
   clearSessionCookie,
@@ -35,12 +35,13 @@ function buildDiscordAuthorizeUrl(state: string, redirectUri: string): string {
 }
 
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
-  // Construct Discord OAuth2 URL for popup or direct navigation
+  // Construct Discord OAuth2 URL using DISCORD_REDIRECT_URI from environment
   app.get('/api/auth/url', async (request, reply) => {
-    if (!isDiscordOAuthConfigured()) {
+    const redirectUri = getDiscordRedirectUriOrNull();
+    if (!isDiscordOAuthConfigured() || !redirectUri) {
       throw new AppError(
         'DISCORD_OAUTH_NOT_CONFIGURED',
-        'Discord OAuth2 credentials (DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET) are not configured on the server.',
+        'Discord OAuth2 environment variables (DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI) are not configured on the server.',
         503
       );
     }
@@ -54,10 +55,6 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       );
     }
 
-    const origin =
-      (request.query as { origin?: string })?.origin ||
-      `${request.protocol}://${request.headers.host}`;
-    const redirectUri = resolveDiscordRedirectUri(origin);
     const state = generateSecureToken(16);
 
     reply.setCookie(OAUTH_STATE_COOKIE, state, {
@@ -69,23 +66,21 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       success: true,
       data: {
         url: buildDiscordAuthorizeUrl(state, redirectUri),
-        redirectUri,
       },
     };
   });
 
   // Direct OAuth redirect route
   app.get('/api/auth/discord', async (request, reply) => {
-    if (!isDiscordOAuthConfigured()) {
+    const redirectUri = getDiscordRedirectUriOrNull();
+    if (!isDiscordOAuthConfigured() || !redirectUri) {
       throw new AppError(
         'DISCORD_OAUTH_NOT_CONFIGURED',
-        'Discord OAuth2 credentials (DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET) are not configured on the server.',
+        'Discord OAuth2 environment variables (DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI) are not configured on the server.',
         503
       );
     }
 
-    const origin = `${request.protocol}://${request.headers.host}`;
-    const redirectUri = resolveDiscordRedirectUri(origin);
     const state = generateSecureToken(16);
 
     reply.setCookie(OAUTH_STATE_COOKIE, state, {
@@ -120,7 +115,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       );
     }
 
-    if (!isDiscordOAuthConfigured()) {
+    const redirectUri = getDiscordRedirectUriOrNull();
+    if (!isDiscordOAuthConfigured() || !redirectUri) {
       throw new AppError(
         'DISCORD_OAUTH_NOT_CONFIGURED',
         'Discord OAuth2 environment variables are not configured.',
@@ -129,19 +125,17 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const storedState = request.cookies?.[OAUTH_STATE_COOKIE];
-    if (storedState && query.state && storedState !== query.state) {
+    if (!storedState || !query.state || storedState !== query.state) {
       throw new AppError(
         'INVALID_OAUTH_STATE',
-        'OAuth2 state parameter mismatch (CSRF protection triggered).',
+        'OAuth2 state parameter missing or mismatched (CSRF protection triggered).',
         400
       );
     }
 
     const prisma = getPrismaOrThrow();
-    const origin = `${request.protocol}://${request.headers.host}`;
-    const redirectUri = resolveDiscordRedirectUri(origin);
 
-    // Exchange code for token
+    // Exchange authorization code for tokens
     const tokenRes = await fetch('https://discord.com/api/v10/oauth2/token', {
       method: 'POST',
       headers: {
@@ -200,12 +194,6 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
 
     const displayName = discordUser.global_name || discordUser.username;
 
-    // First user in an empty database is granted ADMIN role automatically
-    const existingUsersCount = await prisma.user.count();
-    const existingUser = await prisma.user.findUnique({
-      where: { discordId: discordUser.id },
-    });
-
     const user = await prisma.user.upsert({
       where: { discordId: discordUser.id },
       update: {
@@ -220,7 +208,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         displayName,
         avatar: avatarUrl,
         email: discordUser.email ?? null,
-        role: existingUsersCount === 0 && !existingUser ? 'ADMIN' : 'USER',
+        role: 'USER',
       },
     });
 

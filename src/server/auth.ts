@@ -30,6 +30,8 @@ export interface AuthContext {
   session: Session;
 }
 
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
 export async function resolveAuthContext(
   request: FastifyRequest
 ): Promise<AuthContext | null> {
@@ -55,6 +57,23 @@ export async function resolveAuthContext(
 
   if (!session || session.revokedAt || session.expiresAt <= new Date()) {
     return null;
+  }
+
+  // CSRF verification on state-mutating cookie-authenticated requests
+  if (cookieToken && !bearerToken && MUTATING_METHODS.has(request.method)) {
+    const customHeader = request.headers['x-hyperhost-request'];
+    const csrfHeader = request.headers['x-csrf-token'];
+    const validCsrf =
+      customHeader === '1' ||
+      (typeof csrfHeader === 'string' && csrfHeader === session.csrfToken);
+
+    if (!validCsrf) {
+      throw new AppError(
+        'CSRF_VALIDATION_FAILED',
+        'Missing or invalid CSRF protection header on state-changing request.',
+        403
+      );
+    }
   }
 
   return {
@@ -160,8 +179,26 @@ const FORBIDDEN_METADATA_KEYS = [
   'encryptedvalue',
   'accesstoken',
   'refreshtoken',
+  'databaseurl',
+  'database_url',
   'value',
 ];
+
+function sanitizeActivityValue(val: unknown): unknown {
+  if (typeof val === 'string') {
+    return val.replace(
+      /\b(postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^\s"']+/gi,
+      '$1://[REDACTED]'
+    );
+  }
+  if (Array.isArray(val)) {
+    return val.map(sanitizeActivityValue);
+  }
+  if (val && typeof val === 'object') {
+    return sanitizeActivityMetadata(val as Record<string, unknown>);
+  }
+  return val;
+}
 
 function sanitizeActivityMetadata(
   meta: Record<string, unknown>
@@ -172,7 +209,7 @@ function sanitizeActivityMetadata(
     if (FORBIDDEN_METADATA_KEYS.some((bad) => lower.includes(bad))) {
       clean[key] = '[REDACTED]';
     } else {
-      clean[key] = val;
+      clean[key] = sanitizeActivityValue(val);
     }
   }
   return clean;

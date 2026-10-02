@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { ShieldCheck, ExternalLink, Server, Database, Lock, AlertCircle, Layers } from 'lucide-react';
+import {
+  ShieldCheck,
+  ExternalLink,
+  Server,
+  Database,
+  Lock,
+  AlertCircle,
+} from 'lucide-react';
 import { LogoMark } from './LogoMark';
 import { apiFetch, ClientApiError } from './api';
 import type { HealthReportDTO } from '../shared/types';
@@ -7,13 +14,11 @@ import type { HealthReportDTO } from '../shared/types';
 interface LoginViewProps {
   health: HealthReportDTO | null;
   onRefreshAuth: () => void;
-  onOpenInspector: () => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
   health,
   onRefreshAuth,
-  onOpenInspector,
 }) => {
   const [authError, setAuthError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -22,10 +27,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
     setAuthError(null);
     setConnecting(true);
     try {
-      const origin = window.location.origin;
-      const data = await apiFetch<{ url: string; redirectUri: string }>(
-        `/api/auth/url?origin=${encodeURIComponent(origin)}`
-      );
+      const data = await apiFetch<{ url: string }>('/api/auth/url');
 
       const popup = window.open(
         data.url,
@@ -53,7 +55,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
       <header className="px-6 py-4 border-b border-slate-800/80 flex items-center justify-between max-w-7xl w-full mx-auto">
         <LogoMark size="md" />
         <div className="flex items-center gap-4 text-xs text-slate-400">
-          <span>Control Plane API: {health?.api === 'online' ? 'Online' : 'Checking'}</span>
+          <span>
+            Control Plane API: {health?.api === 'online' ? 'Online' : 'Checking'}
+          </span>
           <span aria-hidden="true">·</span>
           <span>Max Quota: {health?.limits.maxHostsPerUser ?? 10} Hosts / User</span>
         </div>
@@ -140,16 +144,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   className="w-full py-3 px-4 rounded-xl bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2.5 cursor-pointer"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  <span>{connecting ? 'Connecting to Discord...' : 'Continue with Discord OAuth2'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={onOpenInspector}
-                  className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs font-medium transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Inspect Control Plane & Host Panel UI</span>
+                  <span>
+                    {connecting ? 'Connecting to Discord...' : 'Continue with Discord OAuth2'}
+                  </span>
                 </button>
               </div>
 

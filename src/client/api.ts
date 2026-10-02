@@ -19,6 +19,7 @@ export async function apiFetch<T>(
   options?: RequestInit
 ): Promise<T> {
   const headers: Record<string, string> = {
+    'X-HyperHost-Request': '1',
     ...(options?.body ? { 'Content-Type': 'application/json' } : {}),
     ...((options?.headers as Record<string, string>) || {}),
   };

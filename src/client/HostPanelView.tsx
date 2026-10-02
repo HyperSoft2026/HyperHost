@@ -44,8 +44,7 @@ export type HostPanelTab =
   | 'activity';
 
 interface HostPanelViewProps {
-  hostId: string | null;
-  inspectorMode?: boolean;
+  hostId: string;
   onBack: () => void;
   onHostDeleted: () => void;
 }
@@ -59,7 +58,6 @@ interface ConsoleFrame {
 
 export const HostPanelView: React.FC<HostPanelViewProps> = ({
   hostId,
-  inspectorMode = false,
   onBack,
   onHostDeleted,
 }) => {
@@ -146,10 +144,10 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
 
   useEffect(() => {
-    if (hostId && !inspectorMode) {
+    if (hostId) {
       void loadHostDetail();
     }
-  }, [hostId, inspectorMode]);
+  }, [hostId]);
 
   useEffect(() => {
     if (activeTab === 'console') {
@@ -161,12 +159,12 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
         wsRef.current = null;
       }
     };
-  }, [activeTab, hostId, inspectorMode]);
+  }, [activeTab, hostId]);
 
   useEffect(() => {
-    if (!hostId || inspectorMode) return;
+    if (!hostId) return;
     void loadTabResource(activeTab);
-  }, [activeTab, hostId, inspectorMode]);
+  }, [activeTab, hostId]);
 
   async function loadHostDetail() {
     if (!hostId) return;
@@ -199,7 +197,7 @@ export const HostPanelView: React.FC<HostPanelViewProps> = ({
       wsRef.current = null;
     }
 
-    if (!hostId || inspectorMode) {
+    if (!hostId) {
       setWsState('RUNTIME_NODE_UNAVAILABLE');
       setConsoleFrames([]);
       return;
