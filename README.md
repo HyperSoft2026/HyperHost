@@ -41,7 +41,7 @@ HyperHost enforces a strict separation between the **Control Plane** (authentica
 ```text
 HyperHost Control Plane
         ↓
-Clever Cloud API (https://api.clever-cloud.com/)
+Clever Cloud API Bridge (https://api-bridge.clever-cloud.com/)
         ↓
 Dedicated Clever Cloud Application (hyperhost-runtime-{hostPublicId})
         ↓
@@ -68,24 +68,25 @@ Configure the following server-side variables on the HyperHost Control Plane:
 ```dotenv
 CLEVER_CLOUD_API_TOKEN=<clever-cloud-api-token>
 CLEVER_CLOUD_ORGANISATION_ID=<orga_xxx-or-self>
+CLEVER_CLOUD_API_BASE_URL=https://api-bridge.clever-cloud.com
 ```
 
-> **Security:** `CLEVER_CLOUD_API_TOKEN`, `NODE_ID`, and `NODE_TOKEN` are handled exclusively on the backend Control Plane, never sent to the Frontend, and automatically scrubbed from logs. Only the HMAC-SHA256 hash (`agentTokenHash`) of `NODE_TOKEN` is stored in PostgreSQL.
+> **Security & Auth:** Authentication uses standard HTTP `Authorization: Bearer ${CLEVER_CLOUD_API_TOKEN}` against `https://api-bridge.clever-cloud.com/v2/...`. No OAuth1 is used. `CLEVER_CLOUD_API_TOKEN`, `NODE_ID`, and `NODE_TOKEN` are handled exclusively on the backend Control Plane, never sent to the Frontend, and automatically scrubbed from logs. Only the HMAC-SHA256 hash (`agentTokenHash`) of `NODE_TOKEN` is stored in PostgreSQL.
 
-### 2. Clever Cloud Public API Provisioning Flow
+### 2. Clever Cloud Public API Bridge Provisioning Flow
 
 When a user creates a Host (`POST /api/hosts`), `runtimeProvisionerService.provisionHostRuntime(hostId)` executes:
 
 1. `PENDING` → Creates the `Host` record in PostgreSQL.
 2. `PROVISIONING` →
    - Generates per-Host `NODE_ID` and `NODE_TOKEN` server-side and stores only `agentTokenHash` in PostgreSQL.
-   - Queries `GET https://api.clever-cloud.com/v2/products/instances` to resolve the active Node.js runtime variant on Clever Cloud.
-   - Calls `POST https://api.clever-cloud.com/v2/organisations/{orgId}/applications` to create a dedicated Clever Cloud Node.js Application named `hyperhost-runtime-{hostPublicIdentifier}`.
-   - If the Clever Cloud API call fails, transitions to `PROVISIONING_FAILED`.
+   - Queries `GET https://api-bridge.clever-cloud.com/v2/products/instances` to resolve the active Node.js runtime variant on Clever Cloud.
+   - Calls `POST https://api-bridge.clever-cloud.com/v2/organisations/{orgId}/applications` to create a dedicated Clever Cloud Node.js Application named `hyperhost-runtime-{hostPublicIdentifier}`.
+   - If the Clever Cloud API Bridge call fails, transitions to `PROVISIONING_FAILED`.
 3. `BOOTSTRAPPING` →
-   - Calls `PUT https://api.clever-cloud.com/v2/organisations/{orgId}/applications/{appId}/env` to inject `CONTROL_PLANE_WS_URL`, `NODE_ID`, `NODE_TOKEN`, `HOST_ID`, and `CC_RUN_COMMAND="npm run start:node-agent"`.
-   - Packages and pushes the standalone Runtime Node Agent (`src/runtime/node-agent.ts` + `package.json`) to the Clever Cloud Application's Git deployment URL (`deployUrl`) and triggers `POST /v2/organisations/{orgId}/applications/{appId}/instances`.
-   - Polls `GET /v2/organisations/{orgId}/applications/{appId}/deployments` and `/instances` until the Clever Cloud deployment and instance reach a real running state.
+   - Calls `PUT https://api-bridge.clever-cloud.com/v2/organisations/{orgId}/applications/{appId}/env` to inject `CONTROL_PLANE_WS_URL`, `NODE_ID`, `NODE_TOKEN`, `HOST_ID`, and `CC_RUN_COMMAND="npm run start:node-agent"`.
+   - Packages and pushes the standalone Runtime Node Agent (`src/runtime/node-agent.ts` + `package.json`) to the Clever Cloud Application's Git deployment URL (`deployUrl`) and triggers `POST https://api-bridge.clever-cloud.com/v2/organisations/{orgId}/applications/{appId}/instances`.
+   - Polls `GET https://api-bridge.clever-cloud.com/v2/organisations/{orgId}/applications/{appId}/deployments` and `/instances` until the Clever Cloud deployment and instance reach a real running state.
    - If deployment or startup fails, transitions to `BOOTSTRAP_FAILED`.
 4. `NODE_CONNECTING` → Waits for the deployed Runtime Node Agent on Clever Cloud to establish its authenticated WebSocket connection (`/api/runtime/nodes/ws`). While the Node has not connected yet, the Host remains in `NODE_CONNECTING`.
 5. `NODE_ONLINE` → Dedicated Node completes its `hello` handshake and is verified `ONLINE`.
@@ -97,7 +98,7 @@ When a user creates a Host (`POST /api/hosts`), `runtimeProvisionerService.provi
 When a Host is deleted (`DELETE /api/hosts/:id`):
 1. Stops the running Host process on the Node.
 2. Disconnects the Runtime Node WebSocket.
-3. Calls `DELETE https://api.clever-cloud.com/v2/organisations/{orgId}/applications/{appId}` to delete the dedicated Clever Cloud Application.
+3. Calls `DELETE https://api-bridge.clever-cloud.com/v2/organisations/{orgId}/applications/{appId}` to delete the dedicated Clever Cloud Application.
 4. Deletes the `Node` and `Host` records in PostgreSQL.
 5. If Clever Cloud API deletion fails transiently, logs the error, records a retry audit entry, and marks the Node record `DELETE_RETRY_REQUIRED` so the Control Plane Scheduler automatically retries deleting the Clever Cloud Application.
 

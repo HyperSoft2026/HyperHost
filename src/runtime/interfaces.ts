@@ -189,6 +189,25 @@ export interface BootstrapRuntimeNodeInput {
   bootstrapScript: string;
 }
 
+export interface RuntimeConnectionTestResult {
+  configured: boolean;
+  ok: boolean;
+  status: number;
+  apiBaseUrl: string;
+  message: string;
+  details?: {
+    userId?: string;
+    userEmail?: string;
+    userName?: string;
+    spaceType: 'personal' | 'organisation';
+    targetOwnerSegment: string;
+    sshKeyConfigured?: boolean;
+    sshKeyRegistered?: boolean;
+    sshKeyName?: string;
+    sshKeyFingerprint?: string;
+  };
+}
+
 export interface RuntimeProvisioner {
   readonly providerName: string;
   isConfigured(): boolean;
@@ -196,6 +215,7 @@ export interface RuntimeProvisioner {
   waitUntilReady(serverId: string): Promise<ProvisionedServer>;
   bootstrapNode(input: BootstrapRuntimeNodeInput): Promise<void>;
   destroyServer(serverId: string): Promise<void>;
+  testConnection(): Promise<RuntimeConnectionTestResult>;
 }
 
 export interface NodeAgent {

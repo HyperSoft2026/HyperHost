@@ -29,6 +29,9 @@ const REDACTED_SUBSTRINGS = [
   'privatekey',
   'ssh_key',
   'sshkey',
+  'ssh_private_key',
+  'sshprivatekey',
+  'clever_cloud_ssh_private_key',
   'bootstraptoken',
   'bootstrap_token',
   'bootstrapscript',
@@ -37,6 +40,10 @@ const REDACTED_SUBSTRINGS = [
 
 function scrubSensitiveStrings(input: string): string {
   return input
+    .replace(
+      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+      '[REDACTED_SSH_PRIVATE_KEY]'
+    )
     .replace(
       /\b(postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^\s"']+/gi,
       '$1://[REDACTED]'
@@ -47,7 +54,10 @@ function scrubSensitiveStrings(input: string): string {
     )
     .replace(/\b(Bot|Bearer)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [REDACTED]')
     .replace(/([?&](?:token|node_token|secret)=)[^&\s"']+/gi, '$1[REDACTED]')
-    .replace(/\b(NODE_TOKEN|RUNTIME_NODE_SECRET|NODE_ENROLLMENT_SECRET|CLEVER_CLOUD_API_TOKEN|CLEVER_CLOUD_API_SECRET)=[^\s"']+/gi, '$1=[REDACTED]')
+    .replace(
+      /\b(NODE_TOKEN|RUNTIME_NODE_SECRET|NODE_ENROLLMENT_SECRET|CLEVER_CLOUD_API_TOKEN|CLEVER_CLOUD_API_SECRET|CLEVER_CLOUD_SSH_PRIVATE_KEY)=[^\s"']+/gi,
+      '$1=[REDACTED]'
+    )
     .replace(/\bhhnode_[A-Za-z0-9._~+/=-]+/gi, '[REDACTED]');
 }
 

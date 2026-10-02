@@ -7,7 +7,11 @@ import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import { config, getEnvironmentDiagnosticsSummary } from './config';
+import {
+  config,
+  getEnvironmentDiagnosticsSummary,
+  getCleverCloudConfigValidation,
+} from './config';
 import { globalErrorHandler } from './errors';
 import { logger } from './logger';
 import { disconnectDatabase, initializeDatabase } from './database';
@@ -18,6 +22,7 @@ import { registerUserRoutes } from './routes/users';
 import { registerHostRoutes } from './routes/hosts';
 import { registerAdminRoutes } from './routes/admin';
 import { registerRuntimeNodeRoutes } from './routes/runtime-nodes';
+import { runtimeProvisionerService } from '../runtime/provisioner';
 
 async function bootstrapControlPlane() {
   const app = Fastify({
@@ -30,6 +35,47 @@ async function bootstrapControlPlane() {
   logger.info('HyperHost environment configuration audit', {
     ...getEnvironmentDiagnosticsSummary(),
   });
+
+  const cleverCloudValidation = getCleverCloudConfigValidation();
+  if (!cleverCloudValidation.configured) {
+    logger.warn(
+      `[CLEVER_CLOUD_CONFIG_WARNING] Clever Cloud Automatic Per-Host Runtime Provisioner is NOT configured. Missing required environment variables: ${cleverCloudValidation.missingVariables.join(
+        ', '
+      )}. Host creation will fail with PROVISIONING_FAILED until CLEVER_CLOUD_API_TOKEN and CLEVER_CLOUD_ORGANISATION_ID are set.`,
+      {
+        apiBaseUrl: cleverCloudValidation.apiBaseUrl,
+        missing: cleverCloudValidation.missingVariables,
+      }
+    );
+  } else {
+    logger.info(
+      'Clever Cloud Automatic Per-Host Runtime Provisioner is configured',
+      {
+        apiBaseUrl: cleverCloudValidation.apiBaseUrl,
+        organisationId: cleverCloudValidation.organisationId,
+        zone: config.cleverCloud.zone,
+      }
+    );
+
+    void (async () => {
+      try {
+        const testRes = await runtimeProvisionerService
+          .getProvisioner()
+          .testConnection();
+        if (testRes.ok) {
+          logger.info(`[CLEVER_CLOUD_STARTUP_VERIFICATION] ${testRes.message}`);
+        } else {
+          logger.warn(`[CLEVER_CLOUD_STARTUP_VERIFICATION] ${testRes.message}`);
+        }
+      } catch (err) {
+        logger.warn(
+          `[CLEVER_CLOUD_STARTUP_VERIFICATION] Unexpected verification failure: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+    })();
+  }
 
   if (!config.sessionSecretConfigured) {
     logger.warn(

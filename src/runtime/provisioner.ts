@@ -6,7 +6,7 @@
  *   Host -> Dedicated Clever Cloud Application -> Dedicated Runtime Node Agent -> Real Host Process
  *
  * Strictly enforces real provisioning only:
- *   - Uses CleverCloudRuntimeProvisioner (https://api.clever-cloud.com/)
+ *   - Uses CleverCloudRuntimeProvisioner (https://api-bridge.clever-cloud.com/)
  *   - Generates NODE_ID and NODE_TOKEN server-side only (stores only HMAC-SHA256 hash in PostgreSQL)
  *   - Never exposes Clever Cloud API credentials or NODE_TOKEN to Frontend or logs
  *   - Never transitions a Host to RUNNING before Node is ONLINE and real process is spawned
@@ -153,19 +153,37 @@ export class NodeProvisionerService {
         },
       });
 
-      // 3. Create dedicated Clever Cloud Application (hyperhost-runtime-{hostPublicId})
-      const createdServer = await this.provisioner.createServer({
-        hostId: host.id,
-        hostPublicId,
-        hostName: host.name,
-        nodeId: dedicatedNode.id,
-        runtime: host.runtime,
-        runtimeVersion: host.runtimeVersion,
-        memoryLimitMb: host.memoryLimitMb,
-        cpuLimitPercent: host.cpuLimitPercent,
-        diskLimitMb: host.diskLimitMb,
-        bootstrapScript: 'npm run start:node-agent',
-      });
+      // 3. Create or reuse dedicated Clever Cloud Application (hyperhost-runtime-{hostPublicId})
+      let createdServer: import('./interfaces').ProvisionedServer;
+
+      if (host.provisionedServerId) {
+        logger.info('Reusing existing dedicated Clever Cloud Application ID for Host', {
+          hostId: host.id,
+          cleverCloudAppId: host.provisionedServerId,
+        });
+        const cleanSlug = host.provisionedServerId.replace(/^app_/, 'app-');
+        createdServer = {
+          serverId: host.provisionedServerId,
+          provider: host.provider || this.provisioner.providerName,
+          ipAddress: '0.0.0.0',
+          fqdn: `${cleanSlug}.cleverapps.io`,
+          location: `Clever Cloud (${config.cleverCloud.zone || 'par'})`,
+          status: 'CREATING',
+        };
+      } else {
+        createdServer = await this.provisioner.createServer({
+          hostId: host.id,
+          hostPublicId,
+          hostName: host.name,
+          nodeId: dedicatedNode.id,
+          runtime: host.runtime,
+          runtimeVersion: host.runtimeVersion,
+          memoryLimitMb: host.memoryLimitMb,
+          cpuLimitPercent: host.cpuLimitPercent,
+          diskLimitMb: host.diskLimitMb,
+          bootstrapScript: 'npm run start:node-agent',
+        });
+      }
 
       const provisionedAt = new Date();
 

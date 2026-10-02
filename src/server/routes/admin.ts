@@ -939,4 +939,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       },
     };
   });
+
+  // Dedicated Clever Cloud API Connection Diagnostic
+  app.get('/api/admin/runtime/clever-cloud/test-connection', async (request) => {
+    await requireAdmin(request);
+    const provisioner = runtimeProvisionerService.getProvisioner();
+    const result = await provisioner.testConnection();
+    return {
+      success: true,
+      data: result,
+    };
+  });
 }

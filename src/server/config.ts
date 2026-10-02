@@ -63,8 +63,9 @@ export interface ServerConfig {
     apiBaseUrl: string;
     apiToken: string | undefined;
     organisationId: string | undefined;
-    apiSecret: string | undefined;
     zone: string;
+    sshPrivateKey: string | undefined;
+    sshPublicKey: string | undefined;
   };
 }
 
@@ -82,14 +83,19 @@ const envRuntimeNodeSecret =
   process.env.RUNTIME_NODE_SECRET?.trim() ||
   process.env.NODE_ENROLLMENT_SECRET?.trim() ||
   undefined;
+const envCleverCloudApiBaseUrl =
+  process.env.CLEVER_CLOUD_API_BASE_URL?.trim() ||
+  'https://api-bridge.clever-cloud.com';
 const envCleverCloudApiToken =
   process.env.CLEVER_CLOUD_API_TOKEN?.trim() || undefined;
 const envCleverCloudOrganisationId =
   process.env.CLEVER_CLOUD_ORGANISATION_ID?.trim() || undefined;
-const envCleverCloudApiSecret =
-  process.env.CLEVER_CLOUD_API_SECRET?.trim() || undefined;
 const envCleverCloudZone =
   process.env.CLEVER_CLOUD_ZONE?.trim() || 'par';
+const envCleverCloudSshPrivateKey =
+  process.env.CLEVER_CLOUD_SSH_PRIVATE_KEY?.trim() || undefined;
+const envCleverCloudSshPublicKey =
+  process.env.CLEVER_CLOUD_SSH_PUBLIC_KEY?.trim() || undefined;
 
 const rawAdminIds = (process.env.ADMIN_DISCORD_IDS || '')
   .split(',')
@@ -161,11 +167,12 @@ export const config: ServerConfig = {
   corsOrigin: process.env.CORS_ORIGIN?.trim() || '*',
   runtimeNodeSecret: envRuntimeNodeSecret,
   cleverCloud: {
-    apiBaseUrl: 'https://api.clever-cloud.com',
+    apiBaseUrl: envCleverCloudApiBaseUrl,
     apiToken: envCleverCloudApiToken,
     organisationId: envCleverCloudOrganisationId,
-    apiSecret: envCleverCloudApiSecret,
     zone: envCleverCloudZone,
+    sshPrivateKey: envCleverCloudSshPrivateKey,
+    sshPublicKey: envCleverCloudSshPublicKey,
   },
 };
 
@@ -173,6 +180,45 @@ export function isCleverCloudProvisioningConfigured(): boolean {
   return Boolean(
     config.cleverCloud.apiToken && config.cleverCloud.organisationId
   );
+}
+
+export function isCleverCloudDeploymentConfigured(): boolean {
+  return Boolean(
+    config.cleverCloud.apiToken &&
+      config.cleverCloud.organisationId &&
+      config.cleverCloud.sshPrivateKey
+  );
+}
+
+export function getCleverCloudMissingConfig(
+  phase: 'PROVISIONING' | 'BOOTSTRAPPING' = 'PROVISIONING'
+): string[] {
+  const missing: string[] = [];
+  if (!config.cleverCloud.apiToken) {
+    missing.push('CLEVER_CLOUD_API_TOKEN');
+  }
+  if (!config.cleverCloud.organisationId) {
+    missing.push('CLEVER_CLOUD_ORGANISATION_ID');
+  }
+  if (phase === 'BOOTSTRAPPING' && !config.cleverCloud.sshPrivateKey) {
+    missing.push('CLEVER_CLOUD_SSH_PRIVATE_KEY');
+  }
+  return missing;
+}
+
+export function getCleverCloudConfigValidation(): {
+  configured: boolean;
+  apiBaseUrl: string;
+  organisationId: string | null;
+  missingVariables: string[];
+} {
+  const missing = getCleverCloudMissingConfig();
+  return {
+    configured: missing.length === 0,
+    apiBaseUrl: config.cleverCloud.apiBaseUrl,
+    organisationId: config.cleverCloud.organisationId || null,
+    missingVariables: missing,
+  };
 }
 
 export function isDiscordOAuthConfigured(): boolean {
@@ -197,8 +243,10 @@ export interface EnvironmentDiagnosticsSummary {
   DISCORD_CLIENT_SECRET: EnvDiagnosticState;
   DISCORD_REDIRECT_URI: EnvDiagnosticState;
   DISCORD_BOT_TOKEN: EnvDiagnosticState;
+  CLEVER_CLOUD_API_BASE_URL: EnvDiagnosticState;
   CLEVER_CLOUD_API_TOKEN: EnvDiagnosticState;
   CLEVER_CLOUD_ORGANISATION_ID: EnvDiagnosticState;
+  CLEVER_CLOUD_SSH_PRIVATE_KEY: EnvDiagnosticState;
   PUBLIC_URL: EnvDiagnosticState;
   NODE_ENV: EnvDiagnosticState;
   PORT: EnvDiagnosticState;
@@ -260,10 +308,16 @@ export function getEnvironmentDiagnosticsSummary(): EnvironmentDiagnosticsSummar
       ? 'configured'
       : 'invalid',
     DISCORD_BOT_TOKEN: config.discord.botToken ? 'configured' : 'missing',
+    CLEVER_CLOUD_API_BASE_URL: config.cleverCloud.apiBaseUrl.startsWith('https://api-bridge.clever-cloud.com')
+      ? 'valid'
+      : 'configured',
     CLEVER_CLOUD_API_TOKEN: config.cleverCloud.apiToken
       ? 'configured'
       : 'missing',
     CLEVER_CLOUD_ORGANISATION_ID: config.cleverCloud.organisationId
+      ? 'configured'
+      : 'missing',
+    CLEVER_CLOUD_SSH_PRIVATE_KEY: config.cleverCloud.sshPrivateKey
       ? 'configured'
       : 'missing',
     PUBLIC_URL: !rawPublicUrl
